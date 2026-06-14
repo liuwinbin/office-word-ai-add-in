@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+  xsi:type="TaskPaneApp">
+
+  <Id>a1b2c3d4-e5f6-7890-abcd-ef1234567890</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>OfficeAI</ProviderName>
+  <DefaultLocale>zh-CN</DefaultLocale>
+  <DisplayName DefaultValue="OfficeAI智能助手"/>
+  <Description DefaultValue="基于大模型的Word智能排版与文本处理助手"/>
+  <IconUrl DefaultValue="https://GITHUB_USERNAME.github.io/office-word-ai-add-in/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://GITHUB_USERNAME.github.io/office-word-ai-add-in/assets/icon-80.png"/>
+  <SupportUrl DefaultValue="https://GITHUB_USERNAME.github.io/office-word-ai-add-in/"/>
+  <AppDomains>
+    <AppDomain>https://GITHUB_USERNAME.github.io</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Document"/>
+  </Hosts>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://GITHUB_USERNAME.github.io/office-word-ai-add-in/taskpane.html"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+
+  <VersionOverrides
+    xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+    xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Document">
+        <DesktopFormFactor>
+          <GetStarted>
+            <Title resid="GetStarted.Title"/>
+            <Description resid="GetStarted.Description"/>
+            <LearnMoreUrl resid="GetStarted.LearnMoreUrl"/>
+          </GetStarted>
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="OfficeAI.Group">
+                <Label resid="OfficeAI.Group.Label"/>
+                <Control xsi:type="Button" id="OfficeAI.TaskpaneButton">
+                  <Label resid="OfficeAI.TaskpaneButton.Label"/>
+                  <Supertip>
+                    <Title resid="OfficeAI.TaskpaneButton.Label"/>
+                    <Description resid="OfficeAI.TaskpaneButton.Tooltip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="OfficeAI.Icon16"/>
+                    <bt:Image size="32" resid="OfficeAI.Icon32"/>
+                    <bt:Image size="80" resid="OfficeAI.Icon80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>OfficeAI.Taskpane</TaskpaneId>
+                    <SourceLocation resid="OfficeAI.Taskpane.Url"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="OfficeAI.Icon16" DefaultValue="https://GITHUB_USERNAME.github.io/office-word-ai-add-in/assets/icon-16.png"/>
+        <bt:Image id="OfficeAI.Icon32" DefaultValue="https://GITHUB_USERNAME.github.io/office-word-ai-add-in/assets/icon-32.png"/>
+        <bt:Image id="OfficeAI.Icon80" DefaultValue="https://GITHUB_USERNAME.github.io/office-word-ai-add-in/assets/icon-80.png"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="OfficeAI.Taskpane.Url" DefaultValue="https://GITHUB_USERNAME.github.io/office-word-ai-add-in/taskpane.html"/>
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://GITHUB_USERNAME.github.io/office-word-ai-add-in/"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="OfficeAI.Group.Label" DefaultValue="AI助手"/>
+        <bt:String id="OfficeAI.TaskpaneButton.Label" DefaultValue="大模型"/>
+        <bt:String id="GetStarted.Title" DefaultValue="OfficeAI智能助手"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="OfficeAI.TaskpaneButton.Tooltip" DefaultValue="打开OfficeAI智能助手侧边栏，使用大模型辅助排版"/>
+        <bt:String id="GetStarted.Description" DefaultValue="使用大模型智能排版与处理Word文本"/>
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

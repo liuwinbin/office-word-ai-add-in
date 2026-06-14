@@ -1,0 +1,8 @@
+{
+  "name": "Office Word AI Add-in",
+  "description": "An Office Word Add-in powered by DeepSeek and Gemini to read, translate, polish, and generate content directly inside Microsoft Word.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

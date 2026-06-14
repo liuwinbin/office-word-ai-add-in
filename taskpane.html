@@ -1,0 +1,243 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OfficeAI智能助手</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      font-size: 13px;
+      color: #1a1a1a;
+      background: #f5f5f5;
+      padding: 16px 14px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #0078d4;
+    }
+
+    .section {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .section-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+    }
+
+    .form-row {
+      margin-bottom: 8px;
+    }
+    .form-row:last-child { margin-bottom: 0; }
+    label {
+      display: block;
+      font-size: 12px;
+      color: #555;
+      margin-bottom: 3px;
+    }
+    select, input[type="text"], input[type="password"], textarea {
+      width: 100%;
+      padding: 6px 8px;
+      font-size: 12px;
+      font-family: inherit;
+      border: 1px solid #c8c8c8;
+      border-radius: 2px;
+      background: #fff;
+      color: #1a1a1a;
+    }
+    select:focus, input:focus, textarea:focus {
+      outline: none;
+      border-color: #0078d4;
+      box-shadow: 0 0 0 1px #0078d4;
+    }
+    textarea {
+      resize: vertical;
+      min-height: 60px;
+    }
+
+    .dynamic-form {
+      display: none;
+    }
+    .dynamic-form.active {
+      display: block;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-family: inherit;
+      font-weight: 500;
+      border: 1px solid #c8c8c8;
+      border-radius: 2px;
+      cursor: pointer;
+      background: #fff;
+      color: #1a1a1a;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn:hover { background: #f0f0f0; }
+    .btn:active { background: #e0e0e0; }
+    .btn.primary {
+      background: #0078d4;
+      color: #fff;
+      border-color: #0078d4;
+    }
+    .btn.primary:hover { background: #106ebe; }
+    .btn.primary:active { background: #005a9e; }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .status {
+      margin-top: 8px;
+      padding: 6px 8px;
+      font-size: 12px;
+      border-radius: 2px;
+      display: none;
+    }
+    .status.success { display: block; background: #dff6dd; color: #1e7e34; border: 1px solid #bae0ba; }
+    .status.error   { display: block; background: #fde7e9; color: #a4262c; border: 1px solid #f5c6c9; }
+    .status.info    { display: block; background: #e7f0fe; color: #004e8c; border: 1px solid #c5d9f1; }
+
+    .spinner {
+      display: none;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #c8c8c8;
+      border-top-color: #0078d4;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    .spinner.active { display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .divider {
+      height: 1px;
+      background: #e0e0e0;
+      margin: 12px 0;
+    }
+
+    .instruction-hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+    }
+
+    .footer {
+      margin-top: 10px;
+      font-size: 10px;
+      color: #999;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>OfficeAI智能助手</h1>
+  </div>
+
+  <!-- 模型配置区 -->
+  <div class="section">
+    <div class="section-title">模型配置</div>
+    <div class="form-row">
+      <label for="modelProvider">模型服务商</label>
+      <select id="modelProvider">
+        <option value="ollama">本地 Ollama</option>
+        <option value="deepseek">DeepSeek API</option>
+      </select>
+    </div>
+
+    <!-- Ollama 配置表单 -->
+    <div id="ollamaForm" class="dynamic-form active">
+      <div class="form-row">
+        <label for="ollamaBaseUrl">本地服务地址</label>
+        <input type="text" id="ollamaBaseUrl" value="http://localhost:11434" placeholder="http://localhost:11434">
+      </div>
+      <div class="form-row">
+        <label for="ollamaModel">模型名称</label>
+        <input type="text" id="ollamaModel" value="deepseek-r1:latest" placeholder="deepseek-r1:latest">
+      </div>
+    </div>
+
+    <!-- DeepSeek 配置表单 -->
+    <div id="deepseekForm" class="dynamic-form">
+      <div class="form-row">
+        <label for="deepseekBaseUrl">API Base URL</label>
+        <input type="text" id="deepseekBaseUrl" value="https://api.deepseek.com" placeholder="https://api.deepseek.com">
+      </div>
+      <div class="form-row">
+        <label for="deepseekApiKey">API Key</label>
+        <input type="password" id="deepseekApiKey" placeholder="sk-...">
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn" id="testConnectionBtn">测试连接</button>
+      <span class="spinner" id="testSpinner"></span>
+    </div>
+    <div class="status" id="testStatus"></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 交互执行区 -->
+  <div class="section">
+    <div class="section-title">AI文本处理</div>
+    <div class="form-row">
+      <label for="selectedText">待处理文本</label>
+      <textarea id="selectedText" rows="4" placeholder="点击下方按钮提取Word当前选区文本，或手动输入..."></textarea>
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="extractBtn">提取选区文本</button>
+    </div>
+
+    <div class="form-row" style="margin-top: 10px;">
+      <label for="instruction">AI指令（自然语言）</label>
+      <textarea id="instruction" rows="2" placeholder="例如：将这段话排版为三号字并加粗标题，或者将文本翻译为英文..."></textarea>
+      <div class="instruction-hint">例如：将标题加粗并设为三号字、翻译成英文、调整段落格式等</div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn primary" id="executeBtn">执行AI指令</button>
+      <span class="spinner" id="executeSpinner"></span>
+    </div>
+    <div class="status" id="executeStatus"></div>
+  </div>
+
+  <div class="footer">OfficeAI智能助手 v1.0.0</div>
+
+  <script src="taskpane.js"></script>
+</body>
+</html>
