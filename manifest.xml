@@ -12,17 +12,17 @@
   <DefaultLocale>zh-CN</DefaultLocale>
   <DisplayName DefaultValue="OfficeAI智能助手"/>
   <Description DefaultValue="基于大模型的Word智能排版与文本处理助手"/>
-  <IconUrl DefaultValue="https://GITHUB_USERNAME.github.io/office-word-ai-add-in/assets/icon-32.png"/>
-  <HighResolutionIconUrl DefaultValue="https://GITHUB_USERNAME.github.io/office-word-ai-add-in/assets/icon-80.png"/>
-  <SupportUrl DefaultValue="https://GITHUB_USERNAME.github.io/office-word-ai-add-in/"/>
+  <IconUrl DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/assets/icon-80.png"/>
+  <SupportUrl DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/"/>
   <AppDomains>
-    <AppDomain>https://GITHUB_USERNAME.github.io</AppDomain>
+    <AppDomain>https://liuwinbin.github.io</AppDomain>
   </AppDomains>
   <Hosts>
     <Host Name="Document"/>
   </Hosts>
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://GITHUB_USERNAME.github.io/office-word-ai-add-in/taskpane.html"/>
+    <SourceLocation DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/taskpane.html"/>
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
 
@@ -65,13 +65,13 @@
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="OfficeAI.Icon16" DefaultValue="https://GITHUB_USERNAME.github.io/office-word-ai-add-in/assets/icon-16.png"/>
-        <bt:Image id="OfficeAI.Icon32" DefaultValue="https://GITHUB_USERNAME.github.io/office-word-ai-add-in/assets/icon-32.png"/>
-        <bt:Image id="OfficeAI.Icon80" DefaultValue="https://GITHUB_USERNAME.github.io/office-word-ai-add-in/assets/icon-80.png"/>
+        <bt:Image id="OfficeAI.Icon16" DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/assets/icon-16.png"/>
+        <bt:Image id="OfficeAI.Icon32" DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/assets/icon-32.png"/>
+        <bt:Image id="OfficeAI.Icon80" DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/assets/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="OfficeAI.Taskpane.Url" DefaultValue="https://GITHUB_USERNAME.github.io/office-word-ai-add-in/taskpane.html"/>
-        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://GITHUB_USERNAME.github.io/office-word-ai-add-in/"/>
+        <bt:Url id="OfficeAI.Taskpane.Url" DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/taskpane.html"/>
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="OfficeAI.Group.Label" DefaultValue="AI助手"/>
