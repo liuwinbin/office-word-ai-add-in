@@ -36,6 +36,12 @@ jobs:
       - name: Build Application
         run: npm run build
 
+      - name: Copy taskpane and assets to dist
+        run: |
+          cp taskpane.html dist/
+          cp taskpane.js dist/
+          cp -r assets dist/
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
