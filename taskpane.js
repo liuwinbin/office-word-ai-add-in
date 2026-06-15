@@ -443,8 +443,10 @@
     '### 中文字号→磅值对照（必须使用磅值，不能写字号名）：\n' +
     '初号=42, 小初=36, 一号=26, 小一=24, 二号=22, 小二=18, 三号=16, 小三=15, 四号=14, 小四=12, 五号=10.5, 小五=9\n\n' +
     '### targetStyle（必填）— 使用文档中实际存在的样式名：\n' +
-    '- "Heading 1"=章标题, "Heading 2"=节标题, "Heading 3"=小节标题\n' +
-    '- "Normal"=正文, "Caption"=题注, "Title"=标题, "Subtitle"=副标题\n\n' +
+    '- 中国用户一般使用中文样式名，请优先使用中文名：\n' +
+    '  "标题 1"=章标题, "标题 2"=节标题, "标题 3"=小节标题, "标题 4"=小标题\n' +
+    '  "正文"=正文段落, "题注"=图题/表题, "标题"=文档标题, "副标题"=副标题\n' +
+    '- 英文 Word 才用 "Heading 1"~"Heading 6", "Normal", "Caption"\n\n' +
     '### properties（必填，至少填一个；仅填用户明确提到的属性）：\n' +
     '| 属性 | 类型 | 说明 | 示例值 |\n' +
     '|------|------|------|--------|\n' +
@@ -649,7 +651,7 @@
 
     return Word.run(function (context) {
       var paragraphs = context.document.body.paragraphs;
-      context.load(paragraphs, 'items');
+      context.load(paragraphs, 'items/style');
 
       return context.sync().then(function () {
         var modifiedCount = 0;
