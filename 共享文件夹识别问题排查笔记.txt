@@ -584,3 +584,143 @@
     manifest.xml   — 版本号 1.0.0.1 → 1.0.0.2（配合缓存刷新）
 
 ================================================================================
+
+  [2026-06-15] commit de585e6 — 重构为聊天式对话 + 连续对话 + 光标感知 v2.0
+  ─────────────────────────────────────────────────────────
+  需求: 三大核心能力重构——无选区对话、多轮连续对话、光标位置感知提问。
+        严格架构约束：所有事件统一在 bindEvents() 注册，cacheDom()→bindEvents()
+        →initUI() 固定顺序执行，严禁 IIFE 顶层注册 DOM/Office.js 事件。
+
+  架构变更 (v1.9 → v2.0):
+
+    1. 聊天式对话界面:
+       - 替换旧"AI 指令 → 执行 → 结果预览"三段式为聊天气泡 UI
+       - 用户消息蓝色右对齐，AI 回复白色左对齐，fadeIn 动画
+       - chatInput textarea + sendBtn，Enter 发送 / Shift+Enter 换行
+       - chat-typing 指示器 + chatSpinner 加载动画
+       - 移除 DOM: instructionInput, executeBtn, insertBtn, resultSection, resultText
+
+    2. 连续对话（conversationHistory）:
+       - 新增 conversationHistory 数组（IIFE 内部，不挂载 window）
+       - MAX_HISTORY_ROUNDS = 10 轮（20 条消息），FIFO 淘汰
+       - 每条消息携带完整 history → AI 具备上下文记忆
+       - 「清空对话」按钮 → 重置 history + DOM + 光标上下文
+       - 文档切换时自动清空（检测 _lastDocumentUrl 变更）
+
+    3. 光标位置感知提问:
+       - 注册 Office.EventType.DocumentSelectionChanged 事件
+       - 300ms 防抖（_selectionDebounceTimer + SELECTION_DEBOUNCE_MS）
+       - 单 Word.run 加载 doc.url + selection.paragraphs
+       - try-catch 隔离特殊区域（页眉/页脚/表格等可能抛异常的区域）
+       - 上下文提示条 (.context-bar)：📍 段落预览 + ✕ 清除按钮
+       - 清除后切换为全文模式
+
+    4. 无选区对话（上下文三级回退）:
+       - 优先级：用户选区 > 光标段落(500字符截断) > 文档摘要(3000字符截断)
+       - 上下文注入格式：【参考上下文】+ 【用户问题】
+       - 空上下文时自动追加 system prompt 指令前缀
+       - 30 秒文档缓存（_docTextCache），避免重复读取全文
+
+    5. sendMessage() 聊天引擎:
+       - 核心入口函数，处理完整消息生命周期
+       - 流程: 确定上下文 → 构建 system prompt → 注入上下文 → 渲染气泡 → 调用 AI → 更新 history
+       - AI 预设通过 sendMessage(fullPrompt, systemAddon, contextText) 调用
+       - 纯 UI 操作，不再直接操作文档
+
+    6. executeAI() 重构为纯 API 函数:
+       - 输入: messages[] + cfg，输出: Promise<string>
+       - 不做任何 UI 操作
+       - 支持 OpenAI 兼容 (/chat/completions) + Ollama (/api/chat) 双协议
+       - 自动去除 reasoner/r1 模型的 temperature 参数
+
+    7. 新增辅助函数:
+       - getSelectedText(): Promise<string> — 获取当前选区文本
+       - getDocumentText(): Promise<string> — 30s 缓存版全文获取
+       - renderChatMessage(role, content): 渲染聊天气泡
+       - scrollChatToBottom(): 自动滚动到最新消息
+       - clearChat(): 重置对话历史 + DOM + 上下文提示条
+       - updateContextIndicator(text): 更新光标上下文提示条
+       - clearCursorContext(): 清除光标上下文
+       - debouncedSelectionChangedHandler(): SelectionChanged 防抖包装
+       - handleSelectionChanged(): 实际的光标变化处理逻辑
+
+  删除的代码:
+    - 旧 executeBtn 点击事件处理（~15 行）
+    - 旧 insertBtn 逻辑（~8 行）
+    - 约 50 行旧 UI 操作代码
+
+  新增代码: ~250 行（状态变量 + 7 个新函数 + bindEvents 重写）
+
+  修改文件:
+    taskpane.js   — ~300 行变更（新增 ~250 + 重构 ~50）
+    taskpane.html — ~150 行变更（新增 chat UI CSS + HTML 结构重写）
+    manifest.xml  — 版本号 1.0.0.2 → 1.0.0.3
+
+================================================================================
+
+  [2026-06-15] commit 4f7579c — 修复 Office WebView 顽固缓存导致 v2.0 不生效
+  ─────────────────────────────────────────────────────────
+  问题: GitHub Pages 已部署 v2.0，但 Word 加载项仍显示 v1.9 旧 UI 和功能。
+
+  根因: Office 内嵌 WebView（IE11/Edge WebView2）按 URL 强缓存 HTML 页面。
+        即使远程文件已更新，WebView 仍返回本地缓存的旧版 HTML。
+        manifest 版本号升级只刷新 manifest 解析，不刷新 WebView 页面缓存。
+
+  修复:
+    1. manifest.xml SourceLocation URL 加版本参数:
+       改前: .../taskpane.html
+       改后: .../taskpane.html?v=2.0
+       → 新 URL 绕过 WebView 缓存，强制网络请求
+    2. taskpane.html 添加三层防缓存 meta 标签:
+       - <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+       - <meta http-equiv="Pragma" content="no-cache">
+       - <meta http-equiv="Expires" content="0">
+    3. manifest.xml 版本号 1.0.0.3 → 1.0.0.4
+
+  用户操作: 必须将最新 manifest.xml 复制到共享文件夹覆盖旧文件，然后重启 Word。
+
+  修改文件:
+    manifest.xml  — 2 处 SourceLocation + 版本号
+    taskpane.html — 3 行 meta 标签
+
+================================================================================
+
+  [2026-06-15] commit 3d62fd5 — 排版格式二级界面 + 聊天区放大 + HTML 格式插入 v2.1
+  ─────────────────────────────────────────────────────────
+  需求:
+    1. 把 8 个排版预设按钮移到独立二级界面，释放主界面空间
+    2. 增加聊天消息区 UI 面积
+    3. 修复 AI 回复插入文档时 HTML 标签以纯文本显示的问题
+
+  修改内容:
+
+    1. 排版格式二级界面:
+       - 新增 presetsPage 页面（Page 2），位于主界面和设置界面之间
+       - 主页「一键智能排版」旁新增「📜 排版格式」按钮
+       - presetsPage 分为两组:
+         · 原生格式（直接操作文档，不走 AI）: 标题加粗居中/正文首行缩进/段落间距调整/正文字号行距
+         · AI 内容处理（需先读取文档或选中文本）: 校对润色/中译英/英译中/生成摘要
+       - 点击 AI 预设自动切回主界面 → 用户可直接看到聊天区 AI 交互过程
+       - 原生格式操作结果直接显示在 presetsPage 的 presetsStatus 状态栏
+       - showPage() 重构: if/else 二值 → 三页统一 remove/add active 模式
+       - 新增 DOM 引用: openPresetsBtn, backFromPresetsBtn, presetsPage, presetsStatus
+
+    2. 聊天区面积扩大:
+       - 移除 .chat-section 的 max-height: 300px 限制
+       - min-height 120px → 180px
+       - chat-section 靠 flex: 1 自动填满主界面剩余空间
+
+    3. HTML 格式插入修复（insertText → insertHtml）:
+       问题: AI 按 system prompt 返回 HTML（<h2>、<p style="text-indent:2em"> 等），
+             但 insertText() 将 HTML 当作纯文本插入 → 标签原样显示，格式丢失。
+       修复: insertLastBtn / replaceBtn / appendBtn 全部改用 insertHtml()
+       - selection.insertHtml(html, Word.InsertLocation.replace)
+       - body.insertHtml(html, Word.InsertLocation.end)
+       → Word 自动将 HTML 转换为原生格式（Heading 样式、段落缩进、加粗斜体等）
+
+  修改文件:
+    taskpane.html — ~100 行变更（新增 presetsPage + 精简主界面 + CSS 调整）
+    taskpane.js  — ~30 行变更（cacheDom + showPage + bindEvents + insertHtml）
+    manifest.xml  — 版本号 1.0.0.4 → 1.0.0.5，cache-busting v=2.0 → v=2.1
+
+================================================================================
