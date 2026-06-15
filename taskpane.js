@@ -36,8 +36,11 @@
     // 主界面
     el.mainPage         = document.getElementById('mainPage');
     el.settingsPage     = document.getElementById('settingsPage');
+    el.presetsPage      = document.getElementById('presetsPage');
     el.openSettingsBtn  = document.getElementById('openSettingsBtn');
+    el.openPresetsBtn   = document.getElementById('openPresetsBtn');
     el.backToMainBtn    = document.getElementById('backToMainBtn');
+    el.backFromPresetsBtn = document.getElementById('backFromPresetsBtn');
     el.readFullDocBtn   = document.getElementById('readFullDocBtn');
     el.extractSelBtn    = document.getElementById('extractSelectionBtn');
     el.readSpinner      = document.getElementById('readSpinner');
@@ -91,6 +94,7 @@
     el.formatProgressBar = document.getElementById('formatProgressBar');
     el.formatProgressText = document.getElementById('formatProgressText');
     el.formatStatus      = document.getElementById('formatStatus');
+    el.presetsStatus     = document.getElementById('presetsStatus');
 
     // 排版参数设置
     el.formatCnFont       = document.getElementById('formatCnFont');
@@ -278,12 +282,16 @@
      视图切换
      ═══════════════════════════════════════════════════════════ */
   function showPage(page) {
+    el.mainPage.classList.remove('active');
+    el.settingsPage.classList.remove('active');
+    el.presetsPage.classList.remove('active');
+
     if (page === 'main') {
       el.mainPage.classList.add('active');
-      el.settingsPage.classList.remove('active');
-    } else {
+    } else if (page === 'settings') {
       el.settingsPage.classList.add('active');
-      el.mainPage.classList.remove('active');
+    } else if (page === 'presets') {
+      el.presetsPage.classList.add('active');
     }
   }
 
@@ -425,9 +433,9 @@
    * @param {string} presetKey - 预设键名（format_title|format_indent|format_spacing|format_font）
    */
   function executeNativeFormatPreset(presetKey) {
-    clearStatus(el.mainStatus);
+    clearStatus(el.presetsStatus);
     var label = PRESET_LABELS[presetKey] || presetKey;
-    showStatus(el.mainStatus, 'info', '正在应用「' + label + '」...');
+    showStatus(el.presetsStatus, 'info', '正在应用「' + label + '」...');
 
     var opts = getFormatOptions();
 
@@ -461,13 +469,13 @@
         return context.sync();
       });
     }).then(function () {
-      showStatus(el.mainStatus, 'success', '✓ 「' + label + '」已应用。');
+      showStatus(el.presetsStatus, 'success', '✓ 「' + label + '」已应用。');
     }).catch(function (err) {
       console.error('executeNativeFormatPreset [' + presetKey + '] error:', err);
       var detail = err.message || '未知错误';
       if (err.code) { detail = err.code + ': ' + detail; }
       if (err.debugInfo) { console.error('debugInfo:', err.debugInfo); }
-      showStatus(el.mainStatus, 'error', '格式应用失败: ' + detail);
+      showStatus(el.presetsStatus, 'error', '格式应用失败: ' + detail);
     });
   }
 
@@ -1786,6 +1794,14 @@
       showPage('main');
     });
 
+    el.openPresetsBtn.addEventListener('click', function () {
+      showPage('presets');
+    });
+
+    el.backFromPresetsBtn.addEventListener('click', function () {
+      showPage('main');
+    });
+
     // --- 服务商切换 ---
     el.modelProvider.addEventListener('change', function () {
       updateProviderUI(el.modelProvider.value);
@@ -2096,12 +2112,14 @@
           text = currentCursorContext;
         }
         if (!text) {
-          showStatus(el.mainStatus, 'error', '请先读取文档、选中文本，或将光标移至目标段落。');
+          showStatus(el.presetsStatus, 'error', '请先读取文档、选中文本，或将光标移至目标段落。');
           return;
         }
 
         // 构建完整提示词（预设 prompt + 文档文本作为上下文）
         var fullPrompt = preset.prompt + '\n\n"""\n' + text + '\n"""';
+        // 切换回主界面以显示聊天交互
+        showPage('main');
         sendMessage(fullPrompt, preset.systemAddon, text);
       });
     });
@@ -2142,7 +2160,7 @@
 
       Word.run(function (context) {
         var selection = context.document.getSelection();
-        selection.insertText(_lastAIResponse, Word.InsertLocation.replace);
+        selection.insertHtml(_lastAIResponse, Word.InsertLocation.replace);
         return context.sync();
       }).then(function () {
         showStatus(el.chatStatus, 'success', '已插入到文档光标处。');
@@ -2160,7 +2178,7 @@
 
       Word.run(function (context) {
         var selection = context.document.getSelection();
-        selection.insertText(_lastAIResponse, Word.InsertLocation.replace);
+        selection.insertHtml(_lastAIResponse, Word.InsertLocation.replace);
         return context.sync();
       }).then(function () {
         showStatus(el.chatStatus, 'success', '已替换选区。');
@@ -2178,7 +2196,7 @@
 
       Word.run(function (context) {
         var body = context.document.body;
-        body.insertText(_lastAIResponse, Word.InsertLocation.end);
+        body.insertHtml(_lastAIResponse, Word.InsertLocation.end);
         return context.sync();
       }).then(function () {
         showStatus(el.chatStatus, 'success', '已追加到文档末尾。');
@@ -2206,7 +2224,7 @@
      ═══════════════════════════════════════════════════════════ */
   Office.onReady(function (info) {
     if (info.host === Office.HostType.Word) {
-      console.log('OfficeAI v2.0: Word host detected');
+      console.log('OfficeAI v2.1: Word host detected');
 
       // 1. 缓存 DOM 引用（必须在 bindEvents 之前）
       cacheDom();
@@ -2230,8 +2248,9 @@
       clearStatus(el.settingsStatus);
       clearStatus(el.fetchModelsStatus);
       clearStatus(el.formatStatus);
+      clearStatus(el.presetsStatus);
 
-      console.log('OfficeAI v2.0: Initialization complete');
+      console.log('OfficeAI v2.1: Initialization complete');
     } else {
       console.warn('OfficeAI: Unsupported host:', info.host);
     }

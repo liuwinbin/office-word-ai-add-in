@@ -355,8 +355,7 @@
     .chat-section {
       flex: 1;
       overflow-y: auto;
-      min-height: 120px;
-      max-height: 300px;
+      min-height: 180px;
       padding: 8px 10px;
     }
     .chat-messages {
@@ -476,43 +475,16 @@
         placeholder="点击"读取全文"获取整个文档内容，或"提取选区"获取选中文字。也可以直接粘贴文本..."></textarea>
     </div>
 
-    <!-- 排版格式区 -->
+    <!-- 一键智能排版 + 排版格式入口 -->
     <div class="section">
-      <div class="section-title"><span class="dot orange"></span> 排版格式</div>
-      <div class="preset-grid">
-        <button class="preset-btn" data-preset="format_title">
-          <span class="emoji">&#128220;</span> 标题加粗居中
+      <div class="btn-row stretch">
+        <button class="btn primary" id="autoFormatBtn" style="flex:2;">
+          &#128208; 一键智能排版
         </button>
-        <button class="preset-btn" data-preset="format_indent">
-          <span class="emoji">&#128221;</span> 正文首行缩进
-        </button>
-        <button class="preset-btn" data-preset="format_spacing">
-          <span class="emoji">&#9776;</span> 段落间距调整
-        </button>
-        <button class="preset-btn" data-preset="format_font">
-          <span class="emoji">&#128396;</span> 正文字号行距
-        </button>
-        <button class="preset-btn" data-preset="polish">
-          <span class="emoji">&#10024;</span> 校对润色
-        </button>
-        <button class="preset-btn" data-preset="translate_cn2en">
-          <span class="emoji">&#127758;</span> 中译英
-        </button>
-        <button class="preset-btn" data-preset="translate_en2cn">
-          <span class="emoji">&#127758;</span> 英译中
-        </button>
-        <button class="preset-btn" data-preset="summarize">
-          <span class="emoji">&#128196;</span> 生成摘要
+        <button class="btn" id="openPresetsBtn" style="flex:1;">
+          &#128220; 排版格式
         </button>
       </div>
-    </div>
-
-    <!-- 一键智能排版（AI 语义分析 + Office.js 原生执行） -->
-    <div class="section">
-      <div class="section-title"><span class="dot green"></span> 一键智能排版</div>
-      <button class="btn primary" id="autoFormatBtn" style="width:100%;">
-        &#128208; 一键智能排版
-      </button>
       <span class="spinner" id="autoFormatSpinner"></span>
       <div class="format-progress" id="formatProgress">
         <div class="progress-bar-bg">
@@ -561,11 +533,65 @@
     <!-- 主状态（供排版预设等使用） -->
     <div class="status" id="mainStatus" style="margin-top:6px;"></div>
 
-    <div class="footer">OfficeAI v2.0 &mdash; DeepSeek API</div>
+    <div class="footer">OfficeAI v2.1 &mdash; DeepSeek API</div>
   </div>
 
   <!-- ═══════════════════════════════════════════ -->
-  <!--  设置界面 (Page 2)                          -->
+  <!--  排版格式 (Page 2)                           -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="page" id="presetsPage">
+
+    <div class="header">
+      <button class="back-btn" id="backFromPresetsBtn">
+        &#8592; 返回
+      </button>
+      <h1>&#128220; 排版格式</h1>
+    </div>
+
+    <div class="section">
+      <div class="section-title"><span class="dot orange"></span> 原生格式（直接操作文档，不走 AI）</div>
+      <div class="preset-grid">
+        <button class="preset-btn" data-preset="format_title">
+          <span class="emoji">&#128220;</span> 标题加粗居中
+        </button>
+        <button class="preset-btn" data-preset="format_indent">
+          <span class="emoji">&#128221;</span> 正文首行缩进
+        </button>
+        <button class="preset-btn" data-preset="format_spacing">
+          <span class="emoji">&#9776;</span> 段落间距调整
+        </button>
+        <button class="preset-btn" data-preset="format_font">
+          <span class="emoji">&#128396;</span> 正文字号行距
+        </button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title"><span class="dot blue"></span> AI 内容处理（需先读取文档或选中文本）</div>
+      <div class="preset-grid">
+        <button class="preset-btn" data-preset="polish">
+          <span class="emoji">&#10024;</span> 校对润色
+        </button>
+        <button class="preset-btn" data-preset="translate_cn2en">
+          <span class="emoji">&#127758;</span> 中译英
+        </button>
+        <button class="preset-btn" data-preset="translate_en2cn">
+          <span class="emoji">&#127758;</span> 英译中
+        </button>
+        <button class="preset-btn" data-preset="summarize">
+          <span class="emoji">&#128196;</span> 生成摘要
+        </button>
+      </div>
+      <div class="hint" style="margin-top:6px;">AI 预设会读取左侧文档区域中的文本作为输入</div>
+    </div>
+
+    <div class="status" id="presetsStatus"></div>
+
+    <div class="footer">提示：原生格式直接修改文档，AI 处理结果在聊天区显示</div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!--  设置界面 (Page 3)                          -->
   <!-- ═══════════════════════════════════════════ -->
   <div class="page" id="settingsPage">
 
@@ -717,6 +743,6 @@
     <div class="footer">配置自动保存到本地浏览器存储</div>
   </div>
 
-  <script src="taskpane.js?v=2.0"></script>
+  <script src="taskpane.js?v=2.1"></script>
 </body>
 </html>
