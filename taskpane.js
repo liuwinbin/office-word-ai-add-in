@@ -378,6 +378,200 @@
   };
 
   /* ═══════════════════════════════════════════════════════════
+     样式修改模块 — System Prompt 附加段
+     ═══════════════════════════════════════════════════════════ */
+
+  /**
+   * 样式修改识别 System Prompt 附加段
+   *
+   * 当用户输入是样式修改指令时，指示 AI 输出纯 JSON。
+   * 仅在非 preset 模式下附加到 system prompt 前面。
+   */
+  var STYLE_MODIFY_SYSTEM_ADDON =
+    '## 文档样式实时修改能力\n' +
+    '你具备实时修改 Word 文档样式的能力。当用户的输入明确是在请求修改文档中某个样式的格式定义时\n' +
+    '（例如"把标题3改成宋体小四加粗"、"正文行距改成固定值22磅"、"标题1改为居中"），\n' +
+    '你必须**仅**输出以下格式的 JSON 对象（不要有任何解释、不要用 markdown 代码块包裹、直接输出纯 JSON）：\n\n' +
+    '{"action":"modify_style","targetStyle":"Heading 3","properties":{"fontCN":"宋体","sizePt":12,"bold":true}}\n\n' +
+    '### targetStyle（必填）— 使用 Word 内部英文样式名：\n' +
+    '"Heading 1"=标题1, "Heading 2"=标题2, "Heading 3"=标题3, "Heading 4"=标题4, "Heading 5"=标题5, "Heading 6"=标题6, "Normal"=正文\n\n' +
+    '### properties（必填，至少填一个；仅填用户明确提到的属性）：\n' +
+    '| 属性 | 类型 | 说明 | 示例值 |\n' +
+    '|------|------|------|--------|\n' +
+    '| fontCN | string | 中文字体名称 | "宋体", "微软雅黑", "黑体", "楷体", "仿宋", "方正小标宋" |\n' +
+    '| fontEN | string | 英文字体名称 | "Times New Roman", "Arial", "Consolas" |\n' +
+    '| sizePt | number | 字号（磅值） | 12(=小四), 10.5(=五号), 14(=四号), 15(=小三), 16(=三号), 18(=小二), 22(=二号) |\n' +
+    '| bold | boolean | 是否加粗 | true, false |\n' +
+    '| italic | boolean | 是否斜体 | true, false |\n' +
+    '| lineSpacing | number | 行距值 | 22(配合type:"fixed"即固定值22磅), 1.5(配合type:"multiple"即1.5倍行距) |\n' +
+    '| lineSpacingType | string | 行距类型 | "fixed"(固定值), "multiple"(多倍行距), "atLeast"(最小值) |\n' +
+    '| alignment | string | 对齐方式 | "left"(左对齐), "center"(居中), "right"(右对齐), "justify"(两端对齐) |\n' +
+    '| firstLineIndent | number | 首行缩进(磅) | 24(≈12pt字号×2字符) |\n' +
+    '| color | string | 字体颜色 | "#FF0000" 或 "red" |\n\n' +
+    '### 关键规则（务必遵守）：\n' +
+    '1. **仅**在用户明确要修改文档样式定义时才输出 JSON；正常问答/对话/知识性问题请正常回复文字\n' +
+    '2. 输出**纯 JSON 对象**，第一字符必须是 {，不要用 ``` 代码块包裹\n' +
+    '3. properties 中只填写用户明确提到的属性，不要自作主张添加其他属性\n' +
+    '4. 如果用户的请求**不是**修改样式（如问问题/聊天/翻译等），请正常文字回复，绝对不要输出 JSON\n';
+
+  /* ═══════════════════════════════════════════════════════════
+     样式修改模块 — JSON 解析与 Office.js 执行
+     ═══════════════════════════════════════════════════════════ */
+
+  /**
+   * 从 AI 响应中解析样式修改指令
+   *
+   * 三层容错策略：
+   *   1. 直接 JSON.parse 整个响应
+   *   2. 提取 ```json ... ``` 代码块
+   *   3. 正则匹配包含 "action":"modify_style" 的 JSON 对象
+   *
+   * @param {string} response - AI 原始输出文本
+   * @returns {object|null} 样式修改 action 对象，非样式修改返回 null
+   */
+  function parseStyleModificationJSON(response) {
+    if (!response || typeof response !== 'string') return null;
+
+    var trimmed = response.trim();
+
+    // 第1层：整个响应就是 JSON
+    try {
+      var obj = JSON.parse(trimmed);
+      if (obj && obj.action === 'modify_style' && obj.targetStyle && obj.properties) {
+        return obj;
+      }
+    } catch (e) { /* continue */ }
+
+    // 第2层：JSON 在 markdown 代码块中
+    var m = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (m) {
+      try {
+        var obj2 = JSON.parse(m[1].trim());
+        if (obj2 && obj2.action === 'modify_style' && obj2.targetStyle && obj2.properties) {
+          return obj2;
+        }
+      } catch (e) { /* continue */ }
+    }
+
+    // 第3层：正则提取第一个包含 modify_style 的 JSON 对象
+    var objMatch = trimmed.match(/\{\s*"action"\s*:\s*"modify_style"[\s\S]*?\}/);
+    if (objMatch) {
+      try {
+        var obj3 = JSON.parse(objMatch[0]);
+        if (obj3 && obj3.action === 'modify_style' && obj3.targetStyle && obj3.properties) {
+          return obj3;
+        }
+      } catch (e) { /* continue */ }
+    }
+
+    return null;
+  }
+
+  /**
+   * 对 Word.Style 对象应用属性修改
+   *
+   * 仅设置 props 中存在的属性，其他属性保持不变。
+   *
+   * @param {Word.Style} style - Office.js 样式对象
+   * @param {object} props - 属性键值对
+   */
+  function applyStyleProperties(style, props) {
+    if (props.fontCN || props.fontEN) {
+      style.font.name = props.fontCN || props.fontEN;
+    }
+    if (typeof props.sizePt === 'number') {
+      style.font.size = props.sizePt;
+    }
+    if (typeof props.bold === 'boolean') {
+      style.font.bold = props.bold;
+    }
+    if (typeof props.italic === 'boolean') {
+      style.font.italic = props.italic;
+    }
+    if (typeof props.lineSpacing === 'number') {
+      style.paragraphFormat.lineSpacing = props.lineSpacing;
+    }
+    if (typeof props.alignment === 'string') {
+      var alignMap = {
+        'left': 'Left',
+        'center': 'Centered',
+        'right': 'Right',
+        'justify': 'Justified'
+      };
+      style.paragraphFormat.alignment = alignMap[props.alignment] || props.alignment;
+    }
+    if (typeof props.firstLineIndent === 'number') {
+      style.paragraphFormat.firstLineIndent = props.firstLineIndent;
+    }
+    if (typeof props.color === 'string') {
+      style.font.color = props.color;
+    }
+  }
+
+  /**
+   * 执行样式修改 — 通过 Office.js 修改文档样式定义
+   *
+   * 使用 context.document.styles.getByName() 获取样式对象，
+   * 然后仅修改指定的属性。
+   *
+   * @param {object} action - 样式修改指令 {targetStyle: string, properties: object}
+   * @returns {Promise<string>} 成功时返回实际使用的样式名
+   */
+  function executeStyleModification(action) {
+    var name = action.targetStyle;
+    var props = action.properties;
+
+    return Word.run(function (context) {
+      var style = context.document.styles.getByName(name);
+      applyStyleProperties(style, props);
+      return context.sync();
+    }).then(function () {
+      return name;
+    });
+  }
+
+  /**
+   * 构建样式修改成功的人类可读确认消息
+   *
+   * @param {object} action - 样式修改指令
+   * @returns {string} 格式化的确认消息
+   */
+  function buildStyleModificationMessage(action) {
+    var props = action.properties;
+    var parts = [];
+
+    if (props.fontCN) parts.push('中文字体=' + props.fontCN);
+    if (props.fontEN) parts.push('英文字体=' + props.fontEN);
+    if (typeof props.sizePt === 'number') parts.push('字号=' + props.sizePt + 'pt');
+    if (typeof props.bold === 'boolean') parts.push(props.bold ? '加粗' : '取消加粗');
+    if (typeof props.italic === 'boolean') parts.push(props.italic ? '斜体' : '取消斜体');
+    if (typeof props.lineSpacing === 'number') {
+      var lsLabel = '';
+      if (props.lineSpacingType === 'fixed') lsLabel = '固定值';
+      else if (props.lineSpacingType === 'multiple') lsLabel = '倍行距';
+      else if (props.lineSpacingType === 'atLeast') lsLabel = '最小值';
+      var unit = (props.lineSpacingType === 'multiple') ? '倍' : 'pt';
+      parts.push('行距=' + (lsLabel ? lsLabel : '') + props.lineSpacing + unit);
+    }
+    if (props.alignment) {
+      var alignLabel = { left: '左对齐', center: '居中', right: '右对齐', justify: '两端对齐' };
+      parts.push(alignLabel[props.alignment] || props.alignment);
+    }
+    if (typeof props.firstLineIndent === 'number') parts.push('首行缩进=' + props.firstLineIndent + 'pt');
+    if (props.color) parts.push('颜色=' + props.color);
+
+    var cnStyleMap = {
+      'Heading 1': '标题1', 'Heading 2': '标题2', 'Heading 3': '标题3',
+      'Heading 4': '标题4', 'Heading 5': '标题5', 'Heading 6': '标题6',
+      'Normal': '正文'
+    };
+    var displayName = cnStyleMap[action.targetStyle] || action.targetStyle;
+
+    return '✅ 已修改「' + displayName + '」样式：' + parts.join('，') +
+      '。\n\nℹ️ 文档中所有使用"' + displayName + '"样式的内容已自动更新。\n🔄 可按 Ctrl+Z 撤销本次修改。';
+  }
+
+  /* ═══════════════════════════════════════════════════════════
      原生格式预设 — 标题检测
      ═══════════════════════════════════════════════════════════ */
 
@@ -724,7 +918,9 @@
     contextPromise.then(function (ctx) {
       // ═══ 第2步：构建 system prompt ═══
       var cfg = getConfigFromUI();
-      var systemPrompt = systemOverride || cfg.systemPrompt;
+      var basePrompt = systemOverride || cfg.systemPrompt;
+      // 非预设模式：附加样式修改识别能力（预设模式不受影响）
+      var systemPrompt = systemOverride ? basePrompt : (STYLE_MODIFY_SYSTEM_ADDON + '\n\n' + basePrompt);
 
       // 空选区时自动追加指令前缀
       if (!contextText && !ctx && !systemOverride) {
@@ -754,7 +950,45 @@
 
       // ═══ 第6步：调用 AI ═══
       return executeAI(messages, cfg).then(function (response) {
-        // 渲染 AI 回复
+        // ★ 检测是否为样式修改指令
+        var styleAction = parseStyleModificationJSON(response);
+
+        if (styleAction) {
+          // 样式修改模式：执行 Office.js 修改 + 显示确认消息
+          return executeStyleModification(styleAction).then(function () {
+            var friendlyMsg = buildStyleModificationMessage(styleAction);
+            renderChatMessage('assistant', friendlyMsg);
+
+            conversationHistory.push({ role: 'user', content: finalUserContent });
+            conversationHistory.push({ role: 'assistant', content: friendlyMsg });
+            while (conversationHistory.length > MAX_HISTORY_ROUNDS * 2) {
+              conversationHistory.shift();
+              conversationHistory.shift();
+            }
+
+            _lastAIResponse = friendlyMsg;
+            el.insertLastBtn.style.display = '';
+            clearStatus(el.chatStatus);
+          }).catch(function (err) {
+            console.error('executeStyleModification error:', err);
+            var errMsg = '❌ 样式修改失败：' + (err.message || '未知错误') +
+              '\n\n请确认样式名称正确。可用的内置样式：Heading 1~6, Normal';
+            renderChatMessage('assistant', errMsg);
+
+            conversationHistory.push({ role: 'user', content: finalUserContent });
+            conversationHistory.push({ role: 'assistant', content: errMsg });
+            while (conversationHistory.length > MAX_HISTORY_ROUNDS * 2) {
+              conversationHistory.shift();
+              conversationHistory.shift();
+            }
+
+            _lastAIResponse = errMsg;
+            el.insertLastBtn.style.display = '';
+            clearStatus(el.chatStatus);
+          });
+        }
+
+        // 正常聊天回复
         renderChatMessage('assistant', response);
 
         // 更新对话历史（最多 10 轮 = 20 条）
@@ -2224,7 +2458,7 @@
      ═══════════════════════════════════════════════════════════ */
   Office.onReady(function (info) {
     if (info.host === Office.HostType.Word) {
-      console.log('OfficeAI v2.1: Word host detected');
+      console.log('OfficeAI v2.2: Word host detected');
 
       // 1. 缓存 DOM 引用（必须在 bindEvents 之前）
       cacheDom();
@@ -2250,7 +2484,7 @@
       clearStatus(el.formatStatus);
       clearStatus(el.presetsStatus);
 
-      console.log('OfficeAI v2.1: Initialization complete');
+      console.log('OfficeAI v2.2: Initialization complete');
     } else {
       console.warn('OfficeAI: Unsupported host:', info.host);
     }
