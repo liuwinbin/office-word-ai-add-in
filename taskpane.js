@@ -536,7 +536,7 @@
       p.font.italic = props.italic;
     }
     if (typeof props.lineSpacing === 'number') {
-      p.paragraphFormat.lineSpacing = props.lineSpacing;
+      p.lineSpacing = props.lineSpacing;
     }
     if (typeof props.alignment === 'string') {
       var alignMap = {
