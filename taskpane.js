@@ -121,7 +121,20 @@
     temperature:   0.7,
     systemPrompt:  '你是一个集成于 Microsoft Word 的专业排版与文本处理专家。你的任务是对用户提供的文本执行精准操作。' +
                    '如果涉及格式调整，请使用 HTML 标签（如 <b>加粗</b>、<i>斜体</i>、<p style="text-indent:2em">首行缩进</p>、' +
-                   '<h2>标题</h2> 等）包裹文本。请直接返回处理后的结果，不要解释，不要添加前缀说明。',
+                   '<h2>标题</h2> 等）包裹文本。请直接返回处理后的结果，不要解释，不要添加前缀说明。\n\n' +
+                   '## 段落格式保留规则（重要）\n' +
+                   '当用户的上下文文本中包含格式标注（如 [标题 1]、[正文] 等），说明这是从 Word 文档中提取的真实段落格式。\n' +
+                   '你必须严格保留原文的段落结构和格式层级：\n' +
+                   '1. 保持与原文相同的段落数量和顺序\n' +
+                   '2. 每个段落用对应的 HTML 标签包裹：\n' +
+                   '   - [标题 1] → <h1>...</h1>\n' +
+                   '   - [标题 2] → <h2>...</h2>\n' +
+                   '   - [标题 3] → <h3>...</h3>\n' +
+                   '   - [标题 4/5] → <h4>...</h4>\n' +
+                   '   - [正文] → <p style="text-indent:2em">...</p>\n' +
+                   '   - [题注] → <p><b>图/表 X：</b>...</p>\n' +
+                   '3. 段落之间用空行分隔（插入时会自动转为 Word 段落分隔）\n' +
+                   '4. 不要省略任何段落的格式标签，即使段落内容未修改',
     ollamaModel:   'deepseek-r1:latest',
 
     // 原生排版参数
@@ -191,20 +204,48 @@
   }
 
   /**
-   * 获取当前选区文本
+   * 获取当前选区文本（带段落样式标注）
    *
-   * @returns {Promise<string>} 选区文本，无选区时返回空字符串
+   * @returns {Promise<{plainText: string, styledText: string}>}
    */
-  function getSelectedText() {
+  function getSelectedTextWithStyles() {
     return Word.run(function (context) {
       var selection = context.document.getSelection();
-      context.load(selection, 'text');
+      var paragraphs = selection.paragraphs;
+      context.load(paragraphs, 'items');
       return context.sync().then(function () {
-        return (selection.text || '').trim();
+        var plainLines = [];
+        var styledLines = [];
+        var items = paragraphs.items;
+        for (var i = 0; i < items.length; i++) {
+          var p = items[i];
+          var text = (p.text || '').trim();
+          if (text.length === 0) continue;
+
+          var styleName = '';
+          try { styleName = p.style || ''; } catch (e) {}
+
+          // 映射样式名到简短标注
+          var styleTag = styleName;
+          if (/^Heading 1$|^标题 1$/i.test(styleName)) styleTag = '标题 1';
+          else if (/^Heading 2$|^标题 2$/i.test(styleName)) styleTag = '标题 2';
+          else if (/^Heading 3$|^标题 3$/i.test(styleName)) styleTag = '标题 3';
+          else if (/^Heading 4$|^标题 4$/i.test(styleName)) styleTag = '标题 4';
+          else if (/^Heading 5$|^标题 5$/i.test(styleName)) styleTag = '标题 5';
+          else if (/^Caption$|^题注$/i.test(styleName)) styleTag = '题注';
+          else if (/^Normal$|^正文$/i.test(styleName)) styleTag = '正文';
+
+          plainLines.push(text);
+          styledLines.push('[' + styleTag + '] ' + text);
+        }
+        return {
+          plainText: plainLines.join('\n'),
+          styledText: styledLines.join('\n')
+        };
       });
     }).catch(function (err) {
-      console.warn('getSelectedText failed:', err);
-      return '';
+      console.warn('getSelectedTextWithStyles failed:', err);
+      return { plainText: '', styledText: '' };
     });
   }
 
@@ -1025,18 +1066,24 @@
     var contextPromise;
     if (contextText !== undefined) {
       // AI 预设已自带上下文，直接使用
-      contextPromise = Promise.resolve(contextText);
+      contextPromise = Promise.resolve({ text: contextText, hasStyles: false });
     } else {
-      // 优先级：选区 > 光标段落 > 文档摘要 > 空字符串
-      contextPromise = getSelectedText().then(function (selText) {
-        if (selText) return selText; // 选区优先
+      // 优先级：选区（带格式） > 光标段落 > 文档摘要 > 空字符串
+      contextPromise = getSelectedTextWithStyles().then(function (result) {
+        if (result.styledText) {
+          // 选区有内容 → 使用带格式标注的文本
+          return { text: result.styledText, hasStyles: true };
+        }
 
-        if (currentCursorContext) return currentCursorContext; // 光标段落
+        if (currentCursorContext) {
+          // 无选区但有光标段落
+          return { text: currentCursorContext, hasStyles: false };
+        }
 
         // 尝试文档摘要
         return getDocumentText().then(function (docText) {
-          if (docText) return docText.slice(0, 3000); // 截断防 Token 爆炸
-          return '';
+          if (docText) return { text: docText.slice(0, 3000), hasStyles: false };
+          return { text: '', hasStyles: false };
         });
       });
     }
@@ -1049,15 +1096,22 @@
       var systemPrompt = systemOverride ? basePrompt : (STYLE_MODIFY_SYSTEM_ADDON + '\n\n' + basePrompt);
 
       // 空选区时自动追加指令前缀
-      if (!contextText && !ctx && !systemOverride) {
+      if (!contextText && !ctx.text && !systemOverride) {
         systemPrompt = '请基于当前文档内容回答用户的问题。如果文档内容不足以回答问题，请如实说明。\n\n' + systemPrompt;
       }
 
       // ═══ 第3步：构建 user message（含上下文注入） ═══
       var finalUserContent = userMessage;
-      if (ctx && !contextText) {
-        // 有上下文且非 AI 预设模式：注入上下文
-        finalUserContent = '【参考上下文】：\n"""\n' + ctx + '\n"""\n\n【用户问题】：' + userMessage;
+      if (ctx.text && !contextText) {
+        if (ctx.hasStyles) {
+          // ★ 选区带格式标注 → 附带 HTML 映射说明
+          finalUserContent =
+            '【参考上下文 - 段落格式已标注】：\n"""\n' + ctx.text + '\n"""\n\n' +
+            '【用户问题】：' + userMessage;
+        } else {
+          // 光标段落或全文 → 纯文本上下文
+          finalUserContent = '【参考上下文】：\n"""\n' + ctx.text + '\n"""\n\n【用户问题】：' + userMessage;
+        }
       }
 
       // ═══ 第4步：构建完整 messages 数组（system + history + 当前 user） ═══
