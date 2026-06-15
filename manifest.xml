@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <OfficeApp
   xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -6,7 +6,7 @@
   xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
   xsi:type="TaskPaneApp">
 
-  <Id>a1b2c3d4-e5f6-7890-abcd-ef1234567890</Id>
+  <Id>2a929139-573a-4b24-a4e2-b59fe277b693</Id>
   <Version>1.0.0.0</Version>
   <ProviderName>OfficeAI</ProviderName>
   <DefaultLocale>zh-CN</DefaultLocale>
@@ -37,6 +37,7 @@
             <Description resid="GetStarted.Description"/>
             <LearnMoreUrl resid="GetStarted.LearnMoreUrl"/>
           </GetStarted>
+          <FunctionFile resid="Commands.Url" />
           <ExtensionPoint xsi:type="PrimaryCommandSurface">
             <OfficeTab id="TabHome">
               <Group id="OfficeAI.Group">
@@ -70,6 +71,7 @@
         <bt:Image id="OfficeAI.Icon80" DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/assets/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
+        <bt:Url id="Commands.Url" DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/commands.html"/>
         <bt:Url id="OfficeAI.Taskpane.Url" DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/taskpane.html"/>
         <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/"/>
       </bt:Urls>
