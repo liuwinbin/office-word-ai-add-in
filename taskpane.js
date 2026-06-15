@@ -339,10 +339,9 @@
     var opts = getFormatOptions();
 
     Word.run(function (context) {
-      var selection = context.document.getSelection();
-      var selParagraphs = selection.paragraphs;
-      // ★ 必须显式加载 text 属性，否则 Office.js 报错
-      selParagraphs.load('items/text');
+      // 获取选区段落集合（与 smartFormatDocument 使用相同的加载模式）
+      var selParagraphs = context.document.getSelection().paragraphs;
+      context.load(selParagraphs, 'items');
 
       return context.sync().then(function () {
         var paragraphs = selParagraphs.items;
@@ -356,8 +355,9 @@
         }
 
         if (!hasContent) {
+          // 回退到全文（复用已验证的加载模式）
           var bodyParagraphs = context.document.body.paragraphs;
-          bodyParagraphs.load('items/text');
+          context.load(bodyParagraphs, 'items');
           return context.sync().then(function () {
             applyFormatToParagraphs(bodyParagraphs.items, presetKey, opts);
             return context.sync();
