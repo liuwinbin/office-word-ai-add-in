@@ -153,14 +153,6 @@
     }
   }
 
-  el.openSettingsBtn.addEventListener('click', function () {
-    showPage('settings');
-  });
-
-  el.backToMainBtn.addEventListener('click', function () {
-    showPage('main');
-  });
-
   /* ═══════════════════════════════════════════════════════════
      设置界面 — 服务商切换
      ═══════════════════════════════════════════════════════════ */
@@ -191,317 +183,8 @@
     }
   }
 
-  el.modelProvider.addEventListener('change', function () {
-    updateProviderUI(el.modelProvider.value);
-  });
-
   /* ═══════════════════════════════════════════════════════════
-     设置界面 — 获取模型列表
-     ═══════════════════════════════════════════════════════════ */
-  el.fetchModelsBtn.addEventListener('click', function () {
-    clearStatus(el.fetchModelsStatus);
-    var baseUrl = el.apiBaseUrl.value.replace(/\/+$/, '');
-    var apiKey = el.apiKey.value.trim();
-
-    if (!apiKey) {
-      showStatus(el.fetchModelsStatus, 'error',
-        '请先填写 API Key。');
-      return;
-    }
-
-    setSpinner(el.fetchModelsSpinner, true);
-    el.fetchModelsBtn.disabled = true;
-    showStatus(el.fetchModelsStatus, 'info', '正在获取模型列表...');
-
-    // 尝试 OpenAI 兼容的 /models 端点
-    var endpoint = baseUrl + '/models';
-
-    fetch(endpoint, {
-      method: 'GET',
-      headers: {
-        'Authorization': 'Bearer ' + apiKey,
-        'Content-Type': 'application/json'
-      }
-    })
-    .then(function (res) {
-      if (!res.ok) {
-        // 如果是 404，可能端点不存在，尝试从 base URL 构造
-        if (res.status === 404) {
-          // 尝试不带 /v1 的情况：有些 API 的 models 在根路径
-          return fetch(baseUrl.replace(/\/v1$/, '') + '/models', {
-            method: 'GET',
-            headers: {
-              'Authorization': 'Bearer ' + apiKey,
-              'Content-Type': 'application/json'
-            }
-          }).then(function (r2) {
-            if (!r2.ok) throw new Error('MODELS_NOT_SUPPORTED');
-            return r2.json();
-          });
-        }
-        return res.text().then(function (t) {
-          var msg = 'HTTP ' + res.status;
-          try { var d = JSON.parse(t); if (d.error && d.error.message) msg = d.error.message; } catch (e) {}
-          throw new Error(msg);
-        });
-      }
-      return res.json();
-    })
-    .then(function (data) {
-      var models = [];
-
-      // OpenAI 格式: { object: "list", data: [{id: "model-name"}, ...] }
-      if (data && data.data && Array.isArray(data.data)) {
-        models = data.data
-          .map(function (m) { return m.id; })
-          .filter(function (id) { return id && typeof id === 'string'; });
-      }
-      // 数组格式: ["model-a", "model-b"]
-      else if (Array.isArray(data)) {
-        models = data.filter(function (m) { return typeof m === 'string'; });
-      }
-      // 对象格式 (Ollama): { models: [{name: "..."}, ...] }
-      else if (data && data.models && Array.isArray(data.models)) {
-        models = data.models
-          .map(function (m) { return m.name || m.model || m.id; })
-          .filter(Boolean);
-      }
-
-      if (models.length === 0) {
-        throw new Error('MODELS_NOT_SUPPORTED');
-      }
-
-      // 过滤掉非对话模型（可选）
-      var chatModels = models.filter(function (m) {
-        var lower = m.toLowerCase();
-        // 排除明显非对话模型
-        if (lower.includes('embedding')) return false;
-        if (lower.includes('moderation')) return false;
-        if (lower.includes('whisper')) return false;
-        if (lower.includes('tts')) return false;
-        if (lower.includes('dall-e')) return false;
-        return true;
-      });
-
-      if (chatModels.length === 0) chatModels = models;
-
-      // 保存到配置
-      var cfg = getConfigFromUI();
-      cfg.modelList = chatModels;
-      if (!chatModels.includes(cfg.model)) {
-        cfg.model = chatModels[0];
-      }
-      saveConfig(cfg);
-      populateModelDropdown(chatModels, cfg.model);
-
-      showStatus(el.fetchModelsStatus, 'success',
-        '成功获取 ' + chatModels.length + ' 个模型。');
-    })
-    .catch(function (err) {
-      console.error('Fetch models error:', err);
-
-      var fallbackMsg = '';
-      if (err.message === 'MODELS_NOT_SUPPORTED') {
-        // API 不支持 /models 端点，使用默认列表
-        var provider = el.modelProvider.value;
-        var fallbackList;
-        if (provider === 'deepseek') {
-          fallbackList = ['deepseek-chat', 'deepseek-reasoner'];
-          fallbackMsg = 'DeepSeek 不支持模型列表查询。已加载默认模型。';
-        } else {
-          fallbackList = ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo'];
-          fallbackMsg = '该 API 不支持 /models 端点。已加载常见模型列表，可手动输入。';
-        }
-        var cfg = getConfigFromUI();
-        cfg.modelList = fallbackList;
-        saveConfig(cfg);
-        populateModelDropdown(fallbackList, fallbackList[0]);
-        el.modelListGroup.classList.add('visible');
-        showStatus(el.fetchModelsStatus, 'warn', fallbackMsg);
-      } else {
-        showStatus(el.fetchModelsStatus, 'error',
-          '获取失败: ' + (err.message || '网络错误'));
-      }
-    })
-    .finally(function () {
-      setSpinner(el.fetchModelsSpinner, false);
-      el.fetchModelsBtn.disabled = false;
-    });
-  });
-
-  /* ═══════════════════════════════════════════════════════════
-     设置界面 — 保存 & 测试
-     ═══════════════════════════════════════════════════════════ */
-  el.saveSettingsBtn.addEventListener('click', function () {
-    var cfg = getConfigFromUI();
-
-    if ((cfg.provider === 'deepseek' || cfg.provider === 'custom') && !cfg.apiKey) {
-      showStatus(el.settingsStatus, 'error',
-        '请填写 API Key。获取地址: platform.deepseek.com → API Keys');
-      return;
-    }
-
-    saveConfig(cfg);
-    showStatus(el.settingsStatus, 'success', '配置已保存。');
-  });
-
-  el.testConnBtn.addEventListener('click', function () {
-    clearStatus(el.settingsStatus);
-    var cfg = getConfigFromUI();
-
-    if ((cfg.provider === 'deepseek' || cfg.provider === 'custom') && !cfg.apiKey) {
-      showStatus(el.settingsStatus, 'error', '请先填写 API Key。');
-      return;
-    }
-
-    el.testConnBtn.disabled = true;
-    showStatus(el.settingsStatus, 'info', '正在测试连接...');
-
-    if (cfg.provider === 'ollama') {
-      fetch(cfg.apiBaseUrl + '/api/tags', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-      })
-      .then(function (res) {
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.json();
-      })
-      .then(function () {
-        showStatus(el.settingsStatus, 'success', 'Ollama 连接成功！');
-        saveConfig(cfg);
-      })
-      .catch(function (err) {
-        showStatus(el.settingsStatus, 'error', 'Ollama 连接失败: ' + err.message);
-      })
-      .finally(function () { el.testConnBtn.disabled = false; });
-    } else {
-      // DeepSeek / Custom: 发送最小对话请求测试
-      var endpoint = cfg.apiBaseUrl + '/chat/completions';
-
-      var body = {
-        model: cfg.model || 'deepseek-chat',
-        messages: [{ role: 'user', content: 'Hi' }],
-        max_tokens: 5,
-        stream: false
-      };
-
-      fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + cfg.apiKey
-        },
-        body: JSON.stringify(body)
-      })
-      .then(function (res) {
-        if (!res.ok) {
-          return res.text().then(function (t) {
-            var msg = 'HTTP ' + res.status;
-            try {
-              var d = JSON.parse(t);
-              if (d.error && d.error.message) msg = d.error.message;
-            } catch (e) {}
-            throw new Error(msg);
-          });
-        }
-        return res.json();
-      })
-      .then(function () {
-        showStatus(el.settingsStatus, 'success',
-          '连接成功！模型 ' + (cfg.model || 'default') + ' 可用。');
-        saveConfig(cfg);
-      })
-      .catch(function (err) {
-        showStatus(el.settingsStatus, 'error', '连接失败: ' + err.message);
-      })
-      .finally(function () { el.testConnBtn.disabled = false; });
-    }
-  });
-
-  /* ═══════════════════════════════════════════════════════════
-     设置界面 — 辅助交互
-     ═══════════════════════════════════════════════════════════ */
-  el.toggleKeyBtn.addEventListener('click', function () {
-    if (el.apiKey.type === 'password') {
-      el.apiKey.type = 'text';
-      el.toggleKeyBtn.innerHTML = '&#128064;';
-    } else {
-      el.apiKey.type = 'password';
-      el.toggleKeyBtn.innerHTML = '&#128065;';
-    }
-  });
-
-  el.tempSlider.addEventListener('input', function () {
-    var val = parseInt(el.tempSlider.value, 10) / 10;
-    el.tempDisplay.textContent = val.toFixed(1);
-    // 颜色提示
-    if (val <= 0.3) el.tempDisplay.style.color = '#107c10';
-    else if (val <= 0.7) el.tempDisplay.style.color = '#0078d4';
-    else el.tempDisplay.style.color = '#d83b01';
-  });
-
-  /* ═══════════════════════════════════════════════════════════
-     主界面 — 文档读取
-     ═══════════════════════════════════════════════════════════ */
-
-  // 读取全文
-  el.readFullDocBtn.addEventListener('click', function () {
-    clearStatus(el.mainStatus);
-    setSpinner(el.readSpinner, true);
-    el.readFullDocBtn.disabled = true;
-    el.extractSelBtn.disabled = true;
-
-    Word.run(function (context) {
-      var body = context.document.body;
-      context.load(body, 'text');
-      return context.sync().then(function () {
-        if (!body.text || body.text.trim().length === 0) {
-          showStatus(el.mainStatus, 'info', '文档为空，请先输入内容。');
-        } else {
-          el.documentText.value = body.text;
-          showStatus(el.mainStatus, 'success',
-            '已读取全文（约 ' + body.text.length + ' 字符）。');
-        }
-      });
-    }).catch(function (err) {
-      showStatus(el.mainStatus, 'error', '读取全文失败: ' + (err.message || '未知错误'));
-    }).finally(function () {
-      setSpinner(el.readSpinner, false);
-      el.readFullDocBtn.disabled = false;
-      el.extractSelBtn.disabled = false;
-    });
-  });
-
-  // 提取选区
-  el.extractSelBtn.addEventListener('click', function () {
-    clearStatus(el.mainStatus);
-    setSpinner(el.readSpinner, true);
-    el.readFullDocBtn.disabled = true;
-    el.extractSelBtn.disabled = true;
-
-    Word.run(function (context) {
-      var selection = context.document.getSelection();
-      context.load(selection, 'text');
-      return context.sync().then(function () {
-        if (!selection.text || selection.text.trim().length === 0) {
-          showStatus(el.mainStatus, 'info', '未选中文本。请先用鼠标在文档中选择一段文字。');
-        } else {
-          el.documentText.value = selection.text;
-          showStatus(el.mainStatus, 'success',
-            '已提取选区文本（' + selection.text.length + ' 字符）。');
-        }
-      });
-    }).catch(function (err) {
-      showStatus(el.mainStatus, 'error', '提取选区失败: ' + (err.message || '未知错误'));
-    }).finally(function () {
-      setSpinner(el.readSpinner, false);
-      el.readFullDocBtn.disabled = false;
-      el.extractSelBtn.disabled = false;
-    });
-  });
-
-  /* ═══════════════════════════════════════════════════════════
-     主界面 — 排版预设
+     排版预设定义
      ═══════════════════════════════════════════════════════════ */
   var PRESET_PROMPTS = {
     format_title: {
@@ -546,45 +229,9 @@
     }
   };
 
-  el.presetBtns.forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var presetKey = btn.getAttribute('data-preset');
-      var preset = PRESET_PROMPTS[presetKey];
-      if (!preset) return;
-
-      var text = el.documentText.value.trim();
-      if (!text) {
-        showStatus(el.mainStatus, 'error', '请先读取文档或粘贴文本。');
-        return;
-      }
-
-      // 填入预设提示词
-      el.instructionInput.value = preset.prompt;
-      // 自动执行
-      executeAI(text, preset.systemAddon, preset.prompt, preset.label);
-    });
-  });
-
   /* ═══════════════════════════════════════════════════════════
-     主界面 — 自定义指令执行
+     AI 执行核心
      ═══════════════════════════════════════════════════════════ */
-  el.executeBtn.addEventListener('click', function () {
-    var text = el.documentText.value.trim();
-    var instruction = el.instructionInput.value.trim();
-    var cfg = getConfigFromUI();
-
-    if (!text) {
-      showStatus(el.mainStatus, 'error', '请先读取文档或粘贴文本。');
-      return;
-    }
-    if (!instruction) {
-      showStatus(el.mainStatus, 'error', '请输入 AI 指令或点击排版预设按钮。');
-      return;
-    }
-
-    executeAI(text, cfg.systemPrompt, instruction, '自定义指令');
-  });
-
   function executeAI(text, systemPrompt, userPrompt, actionLabel) {
     clearStatus(el.mainStatus);
     el.executeBtn.disabled = true;
@@ -668,40 +315,6 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
-     主界面 — 结果操作（替换选区 / 追加到文末）
-     ═══════════════════════════════════════════════════════════ */
-  el.replaceBtn.addEventListener('click', function () {
-    var content = el.resultText.value;
-    if (!content) return;
-
-    Word.run(function (context) {
-      var selection = context.document.getSelection();
-      selection.insertHtml(content, Word.InsertLocation.replace);
-      return context.sync();
-    }).then(function () {
-      showStatus(el.mainStatus, 'success', '已替换选区。');
-    }).catch(function (err) {
-      showStatus(el.mainStatus, 'error', '替换失败: ' + (err.message || '未知错误'));
-    });
-  });
-
-  el.appendBtn.addEventListener('click', function () {
-    var content = el.resultText.value;
-    if (!content) return;
-
-    Word.run(function (context) {
-      var body = context.document.body;
-      // 在文档末尾插入
-      body.insertHtml(content, Word.InsertLocation.end);
-      return context.sync();
-    }).then(function () {
-      showStatus(el.mainStatus, 'success', '已追加到文档末尾。');
-    }).catch(function (err) {
-      showStatus(el.mainStatus, 'error', '追加失败: ' + (err.message || '未知错误'));
-    });
-  });
-
-  /* ═══════════════════════════════════════════════════════════
      工具函数
      ═══════════════════════════════════════════════════════════ */
   function showStatus(elStatus, type, message) {
@@ -725,28 +338,409 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
+     事件绑定 — 所有事件监听器集中注册
+     必须在 cacheDom() 之后调用！
+     ═══════════════════════════════════════════════════════════ */
+  function bindEvents() {
+
+    // --- 视图切换 ---
+    el.openSettingsBtn.addEventListener('click', function () {
+      showPage('settings');
+    });
+
+    el.backToMainBtn.addEventListener('click', function () {
+      showPage('main');
+    });
+
+    // --- 服务商切换 ---
+    el.modelProvider.addEventListener('change', function () {
+      updateProviderUI(el.modelProvider.value);
+    });
+
+    // --- 获取模型列表 ---
+    el.fetchModelsBtn.addEventListener('click', function () {
+      clearStatus(el.fetchModelsStatus);
+      var baseUrl = el.apiBaseUrl.value.replace(/\/+$/, '');
+      var apiKey = el.apiKey.value.trim();
+
+      if (!apiKey) {
+        showStatus(el.fetchModelsStatus, 'error', '请先填写 API Key。');
+        return;
+      }
+
+      setSpinner(el.fetchModelsSpinner, true);
+      el.fetchModelsBtn.disabled = true;
+      showStatus(el.fetchModelsStatus, 'info', '正在获取模型列表...');
+
+      var endpoint = baseUrl + '/models';
+
+      fetch(endpoint, {
+        method: 'GET',
+        headers: {
+          'Authorization': 'Bearer ' + apiKey,
+          'Content-Type': 'application/json'
+        }
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          if (res.status === 404) {
+            return fetch(baseUrl.replace(/\/v1$/, '') + '/models', {
+              method: 'GET',
+              headers: {
+                'Authorization': 'Bearer ' + apiKey,
+                'Content-Type': 'application/json'
+              }
+            }).then(function (r2) {
+              if (!r2.ok) throw new Error('MODELS_NOT_SUPPORTED');
+              return r2.json();
+            });
+          }
+          return res.text().then(function (t) {
+            var msg = 'HTTP ' + res.status;
+            try { var d = JSON.parse(t); if (d.error && d.error.message) msg = d.error.message; } catch (e) {}
+            throw new Error(msg);
+          });
+        }
+        return res.json();
+      })
+      .then(function (data) {
+        var models = [];
+
+        if (data && data.data && Array.isArray(data.data)) {
+          models = data.data
+            .map(function (m) { return m.id; })
+            .filter(function (id) { return id && typeof id === 'string'; });
+        }
+        else if (Array.isArray(data)) {
+          models = data.filter(function (m) { return typeof m === 'string'; });
+        }
+        else if (data && data.models && Array.isArray(data.models)) {
+          models = data.models
+            .map(function (m) { return m.name || m.model || m.id; })
+            .filter(Boolean);
+        }
+
+        if (models.length === 0) {
+          throw new Error('MODELS_NOT_SUPPORTED');
+        }
+
+        var chatModels = models.filter(function (m) {
+          var lower = m.toLowerCase();
+          if (lower.includes('embedding')) return false;
+          if (lower.includes('moderation')) return false;
+          if (lower.includes('whisper')) return false;
+          if (lower.includes('tts')) return false;
+          if (lower.includes('dall-e')) return false;
+          return true;
+        });
+
+        if (chatModels.length === 0) chatModels = models;
+
+        var cfg = getConfigFromUI();
+        cfg.modelList = chatModels;
+        if (!chatModels.includes(cfg.model)) {
+          cfg.model = chatModels[0];
+        }
+        saveConfig(cfg);
+        populateModelDropdown(chatModels, cfg.model);
+
+        showStatus(el.fetchModelsStatus, 'success',
+          '成功获取 ' + chatModels.length + ' 个模型。');
+      })
+      .catch(function (err) {
+        console.error('Fetch models error:', err);
+
+        var fallbackMsg = '';
+        if (err.message === 'MODELS_NOT_SUPPORTED') {
+          var provider = el.modelProvider.value;
+          var fallbackList;
+          if (provider === 'deepseek') {
+            fallbackList = ['deepseek-chat', 'deepseek-reasoner'];
+            fallbackMsg = 'DeepSeek 不支持模型列表查询。已加载默认模型。';
+          } else {
+            fallbackList = ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo'];
+            fallbackMsg = '该 API 不支持 /models 端点。已加载常见模型列表，可手动输入。';
+          }
+          var cfg = getConfigFromUI();
+          cfg.modelList = fallbackList;
+          saveConfig(cfg);
+          populateModelDropdown(fallbackList, fallbackList[0]);
+          el.modelListGroup.classList.add('visible');
+          showStatus(el.fetchModelsStatus, 'warn', fallbackMsg);
+        } else {
+          showStatus(el.fetchModelsStatus, 'error',
+            '获取失败: ' + (err.message || '网络错误'));
+        }
+      })
+      .finally(function () {
+        setSpinner(el.fetchModelsSpinner, false);
+        el.fetchModelsBtn.disabled = false;
+      });
+    });
+
+    // --- 保存配置 ---
+    el.saveSettingsBtn.addEventListener('click', function () {
+      var cfg = getConfigFromUI();
+
+      if ((cfg.provider === 'deepseek' || cfg.provider === 'custom') && !cfg.apiKey) {
+        showStatus(el.settingsStatus, 'error',
+          '请填写 API Key。获取地址: platform.deepseek.com → API Keys');
+        return;
+      }
+
+      saveConfig(cfg);
+      showStatus(el.settingsStatus, 'success', '配置已保存。');
+    });
+
+    // --- 测试连接 ---
+    el.testConnBtn.addEventListener('click', function () {
+      clearStatus(el.settingsStatus);
+      var cfg = getConfigFromUI();
+
+      if ((cfg.provider === 'deepseek' || cfg.provider === 'custom') && !cfg.apiKey) {
+        showStatus(el.settingsStatus, 'error', '请先填写 API Key。');
+        return;
+      }
+
+      el.testConnBtn.disabled = true;
+      showStatus(el.settingsStatus, 'info', '正在测试连接...');
+
+      if (cfg.provider === 'ollama') {
+        fetch(cfg.apiBaseUrl + '/api/tags', {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' }
+        })
+        .then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        })
+        .then(function () {
+          showStatus(el.settingsStatus, 'success', 'Ollama 连接成功！');
+          saveConfig(cfg);
+        })
+        .catch(function (err) {
+          showStatus(el.settingsStatus, 'error', 'Ollama 连接失败: ' + err.message);
+        })
+        .finally(function () { el.testConnBtn.disabled = false; });
+      } else {
+        var endpoint = cfg.apiBaseUrl + '/chat/completions';
+
+        var body = {
+          model: cfg.model || 'deepseek-chat',
+          messages: [{ role: 'user', content: 'Hi' }],
+          max_tokens: 5,
+          stream: false
+        };
+
+        fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + cfg.apiKey
+          },
+          body: JSON.stringify(body)
+        })
+        .then(function (res) {
+          if (!res.ok) {
+            return res.text().then(function (t) {
+              var msg = 'HTTP ' + res.status;
+              try {
+                var d = JSON.parse(t);
+                if (d.error && d.error.message) msg = d.error.message;
+              } catch (e) {}
+              throw new Error(msg);
+            });
+          }
+          return res.json();
+        })
+        .then(function () {
+          showStatus(el.settingsStatus, 'success',
+            '连接成功！模型 ' + (cfg.model || 'default') + ' 可用。');
+          saveConfig(cfg);
+        })
+        .catch(function (err) {
+          showStatus(el.settingsStatus, 'error', '连接失败: ' + err.message);
+        })
+        .finally(function () { el.testConnBtn.disabled = false; });
+      }
+    });
+
+    // --- API Key 显隐切换 ---
+    el.toggleKeyBtn.addEventListener('click', function () {
+      if (el.apiKey.type === 'password') {
+        el.apiKey.type = 'text';
+        el.toggleKeyBtn.innerHTML = '&#128064;';
+      } else {
+        el.apiKey.type = 'password';
+        el.toggleKeyBtn.innerHTML = '&#128065;';
+      }
+    });
+
+    // --- Temperature 滑块 ---
+    el.tempSlider.addEventListener('input', function () {
+      var val = parseInt(el.tempSlider.value, 10) / 10;
+      el.tempDisplay.textContent = val.toFixed(1);
+      if (val <= 0.3) el.tempDisplay.style.color = '#107c10';
+      else if (val <= 0.7) el.tempDisplay.style.color = '#0078d4';
+      else el.tempDisplay.style.color = '#d83b01';
+    });
+
+    // --- 读取全文 ---
+    el.readFullDocBtn.addEventListener('click', function () {
+      clearStatus(el.mainStatus);
+      setSpinner(el.readSpinner, true);
+      el.readFullDocBtn.disabled = true;
+      el.extractSelBtn.disabled = true;
+
+      Word.run(function (context) {
+        var body = context.document.body;
+        context.load(body, 'text');
+        return context.sync().then(function () {
+          if (!body.text || body.text.trim().length === 0) {
+            showStatus(el.mainStatus, 'info', '文档为空，请先输入内容。');
+          } else {
+            el.documentText.value = body.text;
+            showStatus(el.mainStatus, 'success',
+              '已读取全文（约 ' + body.text.length + ' 字符）。');
+          }
+        });
+      }).catch(function (err) {
+        showStatus(el.mainStatus, 'error', '读取全文失败: ' + (err.message || '未知错误'));
+      }).finally(function () {
+        setSpinner(el.readSpinner, false);
+        el.readFullDocBtn.disabled = false;
+        el.extractSelBtn.disabled = false;
+      });
+    });
+
+    // --- 提取选区 ---
+    el.extractSelBtn.addEventListener('click', function () {
+      clearStatus(el.mainStatus);
+      setSpinner(el.readSpinner, true);
+      el.readFullDocBtn.disabled = true;
+      el.extractSelBtn.disabled = true;
+
+      Word.run(function (context) {
+        var selection = context.document.getSelection();
+        context.load(selection, 'text');
+        return context.sync().then(function () {
+          if (!selection.text || selection.text.trim().length === 0) {
+            showStatus(el.mainStatus, 'info', '未选中文本。请先用鼠标在文档中选择一段文字。');
+          } else {
+            el.documentText.value = selection.text;
+            showStatus(el.mainStatus, 'success',
+              '已提取选区文本（' + selection.text.length + ' 字符）。');
+          }
+        });
+      }).catch(function (err) {
+        showStatus(el.mainStatus, 'error', '提取选区失败: ' + (err.message || '未知错误'));
+      }).finally(function () {
+        setSpinner(el.readSpinner, false);
+        el.readFullDocBtn.disabled = false;
+        el.extractSelBtn.disabled = false;
+      });
+    });
+
+    // --- 排版预设按钮 ---
+    el.presetBtns.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var presetKey = btn.getAttribute('data-preset');
+        var preset = PRESET_PROMPTS[presetKey];
+        if (!preset) return;
+
+        var text = el.documentText.value.trim();
+        if (!text) {
+          showStatus(el.mainStatus, 'error', '请先读取文档或粘贴文本。');
+          return;
+        }
+
+        el.instructionInput.value = preset.prompt;
+        executeAI(text, preset.systemAddon, preset.prompt, preset.label);
+      });
+    });
+
+    // --- 自定义指令执行 ---
+    el.executeBtn.addEventListener('click', function () {
+      var text = el.documentText.value.trim();
+      var instruction = el.instructionInput.value.trim();
+      var cfg = getConfigFromUI();
+
+      if (!text) {
+        showStatus(el.mainStatus, 'error', '请先读取文档或粘贴文本。');
+        return;
+      }
+      if (!instruction) {
+        showStatus(el.mainStatus, 'error', '请输入 AI 指令或点击排版预设按钮。');
+        return;
+      }
+
+      executeAI(text, cfg.systemPrompt, instruction, '自定义指令');
+    });
+
+    // --- 替换选区 ---
+    el.replaceBtn.addEventListener('click', function () {
+      var content = el.resultText.value;
+      if (!content) return;
+
+      Word.run(function (context) {
+        var selection = context.document.getSelection();
+        selection.insertHtml(content, Word.InsertLocation.replace);
+        return context.sync();
+      }).then(function () {
+        showStatus(el.mainStatus, 'success', '已替换选区。');
+      }).catch(function (err) {
+        showStatus(el.mainStatus, 'error', '替换失败: ' + (err.message || '未知错误'));
+      });
+    });
+
+    // --- 追加到文末 ---
+    el.appendBtn.addEventListener('click', function () {
+      var content = el.resultText.value;
+      if (!content) return;
+
+      Word.run(function (context) {
+        var body = context.document.body;
+        body.insertHtml(content, Word.InsertLocation.end);
+        return context.sync();
+      }).then(function () {
+        showStatus(el.mainStatus, 'success', '已追加到文档末尾。');
+      }).catch(function (err) {
+        showStatus(el.mainStatus, 'error', '追加失败: ' + (err.message || '未知错误'));
+      });
+    });
+
+  } // end bindEvents
+
+  /* ═══════════════════════════════════════════════════════════
      Office 初始化
      ═══════════════════════════════════════════════════════════ */
   Office.onReady(function (info) {
     if (info.host === Office.HostType.Word) {
-      console.log('OfficeAI v1.2: Word host detected');
+      console.log('OfficeAI v1.3: Word host detected');
+
+      // 1. 缓存 DOM 引用（必须在 bindEvents 之前）
       cacheDom();
 
-      // 加载配置
+      // 2. 注册所有事件监听器
+      bindEvents();
+
+      // 3. 加载配置
       var cfg = loadConfig();
       applyConfigToUI(cfg);
 
-      // 初始化温度颜色
+      // 4. 初始化温度颜色
       var t = parseFloat(el.tempDisplay.textContent);
       if (t <= 0.3) el.tempDisplay.style.color = '#107c10';
       else if (t <= 0.7) el.tempDisplay.style.color = '#0078d4';
       else el.tempDisplay.style.color = '#d83b01';
 
-      // 默认显示主界面
+      // 5. 默认显示主界面
       showPage('main');
       clearStatus(el.mainStatus);
       clearStatus(el.settingsStatus);
       clearStatus(el.fetchModelsStatus);
+
+      console.log('OfficeAI v1.3: Initialization complete');
     } else {
       console.warn('OfficeAI: Unsupported host:', info.host);
     }

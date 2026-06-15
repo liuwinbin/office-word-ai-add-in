@@ -257,4 +257,26 @@
        - 保存模型列表、选中模型、全部设置参数
        - 保存成功弹出 Toast 提示
 
+  [2026-06-15] commit (当前) — 修复所有按钮无响应 (v1.3)
+  ─────────────────────────────────────────────────────────
+  问题: 加载项显示正常，但点击任何按钮（设置、读取全文、
+        提取选区、排版预设、执行等）均无任何反应。
+
+  根因: taskpane.js 的 IIFE（立即执行函数）在脚本加载时
+        立即注册事件监听器，但 el.openSettingsBtn 等 DOM
+        引用在 cacheDom() 调用之前都是 undefined。
+
+        执行顺序错误:
+        ① IIFE 立即执行 → el = {}（空对象）
+        ② addEventListener 调用 → el.xxx 是 undefined → TypeError
+        ③ Office.onReady 回调 → cacheDom()（太晚了，脚本已崩溃）
+
+  修复: 将所有 addEventListener 注册集中到 bindEvents()
+        函数，在 Office.onReady 回调中按正确顺序调用：
+        ① cacheDom() → ② bindEvents() → ③ 初始化 UI
+
+  修改文件:
+    taskpane.js  — 重构事件绑定架构
+    taskpane.html — 版本号更新为 v1.3
+
 ================================================================================
