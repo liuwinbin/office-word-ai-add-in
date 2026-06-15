@@ -42,6 +42,11 @@
             <OfficeTab id="TabHome">
               <Group id="OfficeAI.Group">
                 <Label resid="OfficeAI.Group.Label"/>
+                <Icon>
+                  <bt:Image size="16" resid="OfficeAI.Icon16"/>
+                  <bt:Image size="32" resid="OfficeAI.Icon32"/>
+                  <bt:Image size="80" resid="OfficeAI.Icon80"/>
+                </Icon>
                 <Control xsi:type="Button" id="OfficeAI.TaskpaneButton">
                   <Label resid="OfficeAI.TaskpaneButton.Label"/>
                   <Supertip>
