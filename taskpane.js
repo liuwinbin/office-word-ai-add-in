@@ -429,36 +429,41 @@
    */
   var STYLE_MODIFY_SYSTEM_ADDON =
     '## 文档样式实时修改能力\n' +
-    '你具备实时修改 Word 文档样式的能力。当用户的输入明确是在请求修改文档中某个样式的格式定义时\n' +
-    '（例如"把标题3改成宋体小四加粗"、"正文行距改成固定值22磅"、"标题1改为居中"），\n' +
-    '你必须**仅**输出以下格式的 JSON 对象（不要有任何解释、不要用 markdown 代码块包裹、直接输出纯 JSON）：\n\n' +
-    '{"action":"modify_style","targetStyle":"Heading 3","properties":{"fontCN":"宋体","sizePt":12,"bold":true}}\n\n' +
+    '你具备实时修改 Word 文档样式的能力。**绝不输出 HTML 代码**——HTML 只显示在对话框里，无法修改 Word 文档。\n' +
+    '样式修改必须输出纯 JSON，系统会自动执行并应用到文档中。\n\n' +
+    '### 需要输出 JSON 的场景（全部）：\n' +
+    '- 直接指令："把标题3改成宋体小四加粗"\n' +
+    '- 行距指令："正文行距改成固定值22磅"\n' +
+    '- 段间距指令："标题1段前12磅段后6磅"\n' +
+    '- ★ 格式规范列表（批量）：用户贴一段格式要求（如论文排版规范），逐条转换为 JSON\n' +
+    '  例：用户说"各章题序及标题 小2号黑体，上下各空一行"\n' +
+    '  → {"action":"modify_style","targetStyle":"Heading 1","properties":{"fontCN":"黑体","sizePt":18,"spaceBefore":18,"spaceAfter":18}}\n' +
+    '  例：用户说"正文用小4号宋体，行距为20磅"\n' +
+    '  → {"action":"modify_style","targetStyle":"Normal","properties":{"fontCN":"宋体","sizePt":12,"lineSpacing":20,"lineSpacingType":"fixed"}}\n\n' +
+    '### 中文字号→磅值对照（必须使用磅值，不能写字号名）：\n' +
+    '初号=42, 小初=36, 一号=26, 小一=24, 二号=22, 小二=18, 三号=16, 小三=15, 四号=14, 小四=12, 五号=10.5, 小五=9\n\n' +
     '### targetStyle（必填）— 使用文档中实际存在的样式名：\n' +
-    '- 中文 Word 常见内置样式名: "标题 1"~"标题 6", "正文", "题注"(图题/表题), "标题", "副标题", "目录标题", "列表段落"\n' +
-    '- 英文 Word 内置样式名: "Heading 1"~"Heading 6", "Normal", "Caption", "Title", "Subtitle"\n' +
-    '- 如果文档使用了自定义样式（如"图题"、"表题"等），请直接使用该自定义样式名\n' +
-    '- **不确定时优先使用文档中可能存在的样式名**\n\n' +
+    '- "Heading 1"=章标题, "Heading 2"=节标题, "Heading 3"=小节标题\n' +
+    '- "Normal"=正文, "Caption"=题注, "Title"=标题, "Subtitle"=副标题\n\n' +
     '### properties（必填，至少填一个；仅填用户明确提到的属性）：\n' +
     '| 属性 | 类型 | 说明 | 示例值 |\n' +
     '|------|------|------|--------|\n' +
-    '| fontCN | string | 中文字体名称 | "宋体", "微软雅黑", "黑体", "楷体", "仿宋", "方正小标宋" |\n' +
-    '| fontEN | string | 英文字体名称 | "Times New Roman", "Arial", "Consolas" |\n' +
-    '| sizePt | number | 字号（磅值） | 12(=小四), 10.5(=五号), 14(=四号), 15(=小三), 16(=三号), 18(=小二), 22(=二号) |\n' +
-    '| bold | boolean | 是否加粗 | true, false |\n' +
-    '| italic | boolean | 是否斜体 | true, false |\n' +
-    '| lineSpacing | number | 行距值 | 22(配合type:"fixed"即固定值22磅), 1.5(配合type:"multiple"即1.5倍行距) |\n' +
-    '| lineSpacingType | string | 行距类型 | "fixed"(固定值), "multiple"(多倍行距), "atLeast"(最小值) |\n' +
-    '| spaceBefore | number | 段前间距(磅) | 12(段前12磅/一行), 0(无段前间距)。用户说"段前X行"时换算为 X×字号，如12pt正文段前0.5行=6pt |\n' +
-    '| spaceAfter | number | 段后间距(磅) | 6(段后6磅/半行), 0(无段后间距)。用户说"段后X行"时换算为 X×字号 |\n' +
-    '| alignment | string | 对齐方式 | "left"(左对齐), "center"(居中), "right"(右对齐), "justify"(两端对齐) |\n' +
-    '| firstLineIndent | number | 首行缩进(磅) | 24(≈12pt字号×2字符) |\n' +
-    '| color | string | 字体颜色 | "#FF0000" 或 "red" |\n\n' +
+    '| fontCN | string | 中文字体 | "宋体","黑体","楷体","仿宋","微软雅黑" |\n' +
+    '| sizePt | number | 字号(磅) | 见上方对照表 |\n' +
+    '| bold | boolean | 加粗 | true/false |\n' +
+    '| italic | boolean | 斜体 | true/false |\n' +
+    '| lineSpacing | number | 行距值 | 配合 lineSpacingType 使用 |\n' +
+    '| lineSpacingType | string | 行距类型 | "fixed"(固定值磅), "multiple"(多倍行距) |\n' +
+    '| spaceBefore | number | 段前(磅) | "上下各空一行"=该级字号磅值, "段前12磅"=12 |\n' +
+    '| spaceAfter | number | 段后(磅) | "上下各空一行"=该级字号磅值, "段后6磅"=6 |\n' +
+    '| alignment | string | 对齐 | "left"/"center"/"right"/"justify" |\n' +
+    '| firstLineIndent | number | 首行缩进(磅) | 12pt字号×2字符=24 |\n\n' +
     '### 关键规则（务必遵守）：\n' +
-    '1. **仅**在用户明确要修改文档样式定义时才输出 JSON；正常问答/对话/知识性问题请正常回复文字\n' +
-    '2. 输出**纯 JSON 对象**，第一字符必须是 {，不要用 ``` 代码块包裹\n' +
-    '3. 如果需要同时修改多个样式，每个样式单独一行 JSON，不要用数组包裹\n' +
-    '4. properties 中只填写用户明确提到的属性，不要自作主张添加其他属性\n' +
-    '5. 如果用户的请求**不是**修改样式（如问问题/聊天/翻译等），请正常文字回复，绝对不要输出 JSON\n';
+    '1. 用户提供的是格式修改请求 → 输出 JSON；不是 → 正常文字回复\n' +
+    '2. 输出**纯 JSON**，每行一个样式，不要用数组或代码块包裹\n' +
+    '3. properties 只填用户提到的属性\n' +
+    '4. ★ 绝不输出 HTML 代码来"展示"格式——HTML 无法修改 Word 文档，必须用 JSON\n' +
+    '5. "上下各空X行"=该级字号×X磅，"上下各空X磅"直接用X\n';
 
   /* ═══════════════════════════════════════════════════════════
      样式修改模块 — JSON 解析与 Office.js 执行
