@@ -542,11 +542,11 @@
     }
     if (typeof props.spaceBefore === 'number') {
       console.log('OfficeAI: applyParagraphFormatting spaceBefore=' + props.spaceBefore + 'pt');
-      p.spaceBefore = props.spaceBefore;
+      p.paragraphFormat.spaceBefore = props.spaceBefore;
     }
     if (typeof props.spaceAfter === 'number') {
       console.log('OfficeAI: applyParagraphFormatting spaceAfter=' + props.spaceAfter + 'pt');
-      p.spaceAfter = props.spaceAfter;
+      p.paragraphFormat.spaceAfter = props.spaceAfter;
     }
     if (typeof props.alignment === 'string') {
       var alignMap = {
