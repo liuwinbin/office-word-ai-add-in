@@ -12,56 +12,98 @@
       font-size: 13px;
       color: #1a1a1a;
       background: #f5f5f5;
-      padding: 16px 14px;
+      padding: 0;
+      overflow: hidden;
     }
 
+    /* ═══ 页面容器 ═══ */
+    .page {
+      display: none;
+      flex-direction: column;
+      height: 100vh;
+      padding: 14px 14px 10px 14px;
+      overflow-y: auto;
+    }
+    .page.active { display: flex; }
+
+    /* ═══ Header ═══ */
     .header {
       display: flex;
       align-items: center;
-      gap: 8px;
+      justify-content: space-between;
       margin-bottom: 14px;
       padding-bottom: 10px;
       border-bottom: 1px solid #e0e0e0;
+      flex-shrink: 0;
     }
     .header h1 {
-      font-size: 16px;
+      font-size: 15px;
       font-weight: 600;
       color: #0078d4;
-    }
-
-    .section {
-      background: #fff;
-      border: 1px solid #e0e0e0;
-      border-radius: 4px;
-      padding: 12px;
-      margin-bottom: 12px;
-    }
-    .section-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: #555;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 10px;
       display: flex;
       align-items: center;
       gap: 6px;
     }
-    .section-title .icon { font-size: 14px; }
-
-    .form-row {
-      margin-bottom: 8px;
+    .header .icon-btn {
+      background: none;
+      border: 1px solid #c8c8c8;
+      border-radius: 4px;
+      padding: 5px 8px;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      color: #555;
+      transition: background 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      font-family: inherit;
+      font-size: 12px;
     }
+    .header .icon-btn:hover { background: #f0f0f0; }
+    .header .icon-btn .gear { font-size: 15px; }
+
+    /* ═══ 通用区块 ═══ */
+    .section {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      flex-shrink: 0;
+    }
+    .section:last-child { margin-bottom: 0; }
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .section-title .dot {
+      width: 6px; height: 6px; border-radius: 50%; display: inline-block;
+    }
+    .dot.blue { background: #0078d4; }
+    .dot.green { background: #107c10; }
+    .dot.orange { background: #d83b01; }
+
+    /* ═══ 表单 ═══ */
+    .form-row { margin-bottom: 7px; }
     .form-row:last-child { margin-bottom: 0; }
     label {
       display: block;
-      font-size: 12px;
+      font-size: 11px;
       color: #555;
-      margin-bottom: 3px;
+      margin-bottom: 2px;
+      font-weight: 500;
     }
     select, input[type="text"], input[type="password"], textarea {
       width: 100%;
-      padding: 6px 8px;
+      padding: 5px 7px;
       font-size: 12px;
       font-family: inherit;
       border: 1px solid #c8c8c8;
@@ -74,23 +116,29 @@
       border-color: #0078d4;
       box-shadow: 0 0 0 1px #0078d4;
     }
-    textarea {
-      resize: vertical;
-      min-height: 60px;
+    textarea { resize: vertical; min-height: 52px; }
+
+    .password-wrap {
+      position: relative;
+      display: flex; align-items: center;
     }
+    .password-wrap input { padding-right: 30px; }
+    .password-wrap .eye-btn {
+      position: absolute; right: 2px;
+      background: none; border: none;
+      cursor: pointer; font-size: 14px;
+      padding: 4px; color: #888;
+    }
+    .eye-btn:hover { color: #333; }
 
-    /* ── Dynamic form visibility ── */
-    .dynamic-form { display: none; }
-    .dynamic-form.active { display: block; }
-
-    /* ── Buttons ── */
+    /* ═══ 按钮 ═══ */
     .btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 4px;
-      padding: 6px 14px;
-      font-size: 12px;
+      gap: 3px;
+      padding: 5px 12px;
+      font-size: 11px;
       font-family: inherit;
       font-weight: 500;
       border: 1px solid #c8c8c8;
@@ -98,269 +146,336 @@
       cursor: pointer;
       background: #fff;
       color: #1a1a1a;
-      transition: background 0.15s, border-color 0.15s;
+      transition: all 0.15s;
+      white-space: nowrap;
     }
     .btn:hover { background: #f0f0f0; }
     .btn:active { background: #e0e0e0; }
-    .btn.primary {
-      background: #0078d4;
-      color: #fff;
-      border-color: #0078d4;
-    }
+    .btn.primary { background: #0078d4; color: #fff; border-color: #0078d4; }
     .btn.primary:hover { background: #106ebe; }
-    .btn.primary:active { background: #005a9e; }
-    .btn.success {
-      background: #107c10;
-      color: #fff;
-      border-color: #107c10;
-    }
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
+    .btn.success { background: #107c10; color: #fff; border-color: #107c10; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn.small { padding: 3px 8px; font-size: 10px; }
 
-    .btn-row {
-      display: flex;
-      gap: 8px;
-      margin-top: 8px;
-    }
+    .btn-row { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+    .btn-row.stretch .btn { flex: 1; }
 
-    /* ── Password wrapper (show/hide toggle) ── */
-    .password-wrapper {
-      position: relative;
+    /* ═══ 排版预设按钮 ═══ */
+    .preset-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px;
+    }
+    .preset-btn {
       display: flex;
       align-items: center;
-    }
-    .password-wrapper input {
-      padding-right: 32px;
-    }
-    .toggle-vis {
-      position: absolute;
-      right: 4px;
-      background: none;
-      border: none;
+      gap: 4px;
+      padding: 6px 8px;
+      font-size: 11px;
+      font-family: inherit;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      background: #fafafa;
       cursor: pointer;
-      font-size: 14px;
-      padding: 4px;
-      color: #888;
-      line-height: 1;
+      text-align: left;
+      transition: all 0.15s;
+      color: #333;
     }
-    .toggle-vis:hover { color: #333; }
+    .preset-btn:hover { background: #e8f4ff; border-color: #0078d4; color: #0078d4; }
+    .preset-btn .emoji { font-size: 14px; flex-shrink: 0; }
 
-    /* ── Temperature slider ── */
+    /* ═══ 温度滑块 ═══ */
     .temp-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      display: flex; align-items: center; gap: 8px;
     }
     .temp-row input[type="range"] {
-      flex: 1;
-      accent-color: #0078d4;
+      flex: 1; accent-color: #0078d4;
     }
-    .temp-label {
-      min-width: 48px;
-      text-align: right;
-      font-weight: 600;
-      font-size: 12px;
-      color: #0078d4;
-    }
-    .temp-hint {
-      font-size: 10px;
-      color: #888;
+    .temp-val {
+      min-width: 32px; text-align: right;
+      font-weight: 600; font-size: 12px;
     }
 
-    /* ── Status ── */
+    /* ═══ 状态 ═══ */
     .status {
-      margin-top: 8px;
-      padding: 6px 8px;
-      font-size: 12px;
+      margin-top: 7px;
+      padding: 5px 7px;
+      font-size: 11px;
       border-radius: 2px;
       display: none;
+      line-height: 1.5;
     }
     .status.success { display: block; background: #dff6dd; color: #1e7e34; border: 1px solid #bae0ba; }
     .status.error   { display: block; background: #fde7e9; color: #a4262c; border: 1px solid #f5c6c9; }
     .status.info    { display: block; background: #e7f0fe; color: #004e8c; border: 1px solid #c5d9f1; }
+    .status.warn    { display: block; background: #fff8e5; color: #6b4c00; border: 1px solid #ffe5a3; }
 
-    /* ── Spinner ── */
+    /* ═══ 加载动画 ═══ */
     .spinner {
       display: none;
-      width: 14px;
-      height: 14px;
+      width: 13px; height: 13px;
       border: 2px solid #c8c8c8;
       border-top-color: #0078d4;
       border-radius: 50%;
       animation: spin 0.6s linear infinite;
-      margin-left: 6px;
       vertical-align: middle;
+      flex-shrink: 0;
     }
     .spinner.active { display: inline-block; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ═══ 返回按钮 ═══ */
+    .back-btn {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-family: inherit;
+      color: #0078d4;
+      padding: 2px 4px;
+    }
+    .back-btn:hover { text-decoration: underline; }
+
+    /* ═══ 提示文字 ═══ */
+    .hint {
+      font-size: 10px;
+      color: #888;
+      margin-top: 3px;
+      line-height: 1.4;
+    }
+    .hint a { color: #0078d4; }
+
     .divider {
       height: 1px;
       background: #e0e0e0;
-      margin: 12px 0;
-    }
-
-    .instruction-hint {
-      font-size: 11px;
-      color: #888;
-      margin-top: 4px;
+      margin: 10px 0;
     }
 
     .footer {
-      margin-top: 10px;
+      margin-top: auto;
+      padding-top: 8px;
       font-size: 10px;
       color: #999;
       text-align: center;
+      flex-shrink: 0;
     }
 
-    /* ── Save indicator ── */
-    .save-indicator {
-      display: inline-block;
-      color: #107c10;
+    /* ═══ 模型列表加载状态 ═══ */
+    #modelListGroup { display: none; }
+    #modelListGroup.visible { display: block; }
+
+    /* ═══ 已保存提示 ═══ */
+    .saved-toast {
+      position: fixed;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #107c10;
+      color: #fff;
+      padding: 5px 14px;
+      border-radius: 3px;
       font-size: 11px;
+      font-weight: 500;
       opacity: 0;
-      transition: opacity 0.3s;
-      margin-left: 8px;
+      transition: opacity 0.25s;
+      pointer-events: none;
+      z-index: 10;
     }
-    .save-indicator.visible { opacity: 1; }
+    .saved-toast.show { opacity: 1; }
   </style>
 </head>
 <body>
 
-  <!-- ── Header ── -->
-  <div class="header">
-    <h1> OfficeAI 智能助手</h1>
+  <!-- 保存提示 -->
+  <div class="saved-toast" id="savedToast">&#10003; 已保存</div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!--  主界面 (Page 1)                            -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="page active" id="mainPage">
+
+    <!-- Header -->
+    <div class="header">
+      <h1>&#10002; OfficeAI</h1>
+      <button class="icon-btn" id="openSettingsBtn" title="大模型配置">
+        <span class="gear">&#9881;</span> 设置
+      </button>
+    </div>
+
+    <!-- 文档读取区 -->
+    <div class="section">
+      <div class="section-title"><span class="dot blue"></span> 文档读取</div>
+      <div class="btn-row">
+        <button class="btn" id="readFullDocBtn">&#128196; 读取全文</button>
+        <button class="btn" id="extractSelectionBtn">&#128203; 提取选区</button>
+        <span class="spinner" id="readSpinner"></span>
+      </div>
+      <textarea id="documentText" rows="4"
+        placeholder="点击"读取全文"获取整个文档内容，或"提取选区"获取选中文字。也可以直接粘贴文本..."></textarea>
+    </div>
+
+    <!-- 排版格式区 -->
+    <div class="section">
+      <div class="section-title"><span class="dot orange"></span> 排版格式</div>
+      <div class="preset-grid">
+        <button class="preset-btn" data-preset="format_title">
+          <span class="emoji">&#128220;</span> 标题加粗居中
+        </button>
+        <button class="preset-btn" data-preset="format_indent">
+          <span class="emoji">&#128221;</span> 正文首行缩进
+        </button>
+        <button class="preset-btn" data-preset="format_spacing">
+          <span class="emoji">&#9776;</span> 段落间距调整
+        </button>
+        <button class="preset-btn" data-preset="format_font">
+          <span class="emoji">&#128396;</span> 正文字号行距
+        </button>
+        <button class="preset-btn" data-preset="polish">
+          <span class="emoji">&#10024;</span> 校对润色
+        </button>
+        <button class="preset-btn" data-preset="translate_cn2en">
+          <span class="emoji">&#127758;</span> 中译英
+        </button>
+        <button class="preset-btn" data-preset="translate_en2cn">
+          <span class="emoji">&#127758;</span> 英译中
+        </button>
+        <button class="preset-btn" data-preset="summarize">
+          <span class="emoji">&#128196;</span> 生成摘要
+        </button>
+      </div>
+    </div>
+
+    <!-- AI 自定义指令 -->
+    <div class="section">
+      <div class="section-title"><span class="dot green"></span> AI 指令</div>
+      <textarea id="instructionInput" rows="2"
+        placeholder="输入自定义指令，例如：将第三段改为疑问句、检查语法错误、把数据改成表格..."></textarea>
+      <div class="btn-row stretch">
+        <button class="btn primary" id="executeBtn">&#9654; 执行</button>
+        <button class="btn success" id="insertBtn" style="display:none;">&#128190; 插入文档</button>
+      </div>
+      <div class="status" id="mainStatus"></div>
+    </div>
+
+    <!-- 待处理结果预览（隐藏） -->
+    <div class="section" id="resultSection" style="display:none;">
+      <div class="section-title"><span class="dot green"></span> AI 处理结果</div>
+      <textarea id="resultText" rows="4" readonly
+        placeholder="AI 处理结果将显示在这里..."></textarea>
+      <div class="btn-row stretch">
+        <button class="btn success" id="replaceBtn">&#8634; 替换选区</button>
+        <button class="btn" id="appendBtn">&#10010; 追加到文末</button>
+      </div>
+    </div>
+
+    <div class="footer">OfficeAI v1.2 &mdash; DeepSeek API</div>
   </div>
 
-  <!-- ═══════════════════════════════════════════════ -->
-  <!--  模型配置区 (可折叠)                            -->
-  <!-- ═══════════════════════════════════════════════ -->
-  <div class="section" id="settingsSection">
-    <div class="section-title">
-      <span class="icon">&#9881;</span> 大模型配置
-      <span class="save-indicator" id="saveIndicator">&#10003; 已保存</span>
+  <!-- ═══════════════════════════════════════════ -->
+  <!--  设置界面 (Page 2)                          -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="page" id="settingsPage">
+
+    <!-- Header with back button -->
+    <div class="header">
+      <button class="back-btn" id="backToMainBtn">
+        &#8592; 返回
+      </button>
+      <h1>&#9881; 大模型配置</h1>
     </div>
 
-    <!-- 模型服务商选择 -->
-    <div class="form-row">
-      <label for="modelProvider">模型服务商</label>
-      <select id="modelProvider">
-        <option value="deepseek">DeepSeek API（推荐）</option>
-        <option value="ollama">本地 Ollama</option>
-      </select>
-    </div>
-
-    <!-- ═══ DeepSeek 配置表单 ═══ -->
-    <div id="deepseekForm" class="dynamic-form active">
+    <!-- 服务商选择 -->
+    <div class="section">
       <div class="form-row">
-        <label for="deepseekBaseUrl">API 地址 (Base URL)</label>
-        <input type="text" id="deepseekBaseUrl" value="https://api.deepseek.com"
-               placeholder="https://api.deepseek.com">
-        <div class="instruction-hint">
-          DeepSeek 官方: https://api.deepseek.com<br>
-          兼容 OpenAI 的第三方 API 也可填此（如硅基流动、OpenRouter）
-        </div>
-      </div>
-
-      <div class="form-row">
-        <label for="deepseekApiKey">API Key</label>
-        <div class="password-wrapper">
-          <input type="password" id="deepseekApiKey" placeholder="sk-...">
-          <button class="toggle-vis" id="toggleKeyBtn" title="显示/隐藏">&#128065;</button>
-        </div>
-        <div class="instruction-hint">
-          从 <b>platform.deepseek.com</b> → API Keys 获取
-        </div>
-      </div>
-
-      <div class="form-row">
-        <label for="deepseekModel">模型</label>
-        <select id="deepseekModel">
-          <option value="deepseek-chat">DeepSeek Chat (V3) — 通用对话/润色/翻译</option>
-          <option value="deepseek-reasoner">DeepSeek Reasoner (R1) — 深度推理/论文/复杂逻辑</option>
+        <label for="modelProvider">模型服务商</label>
+        <select id="modelProvider">
+          <option value="deepseek">DeepSeek API（推荐）</option>
+          <option value="ollama">本地 Ollama</option>
+          <option value="custom">自定义 OpenAI 兼容 API</option>
         </select>
       </div>
-
-      <div class="form-row">
-        <label>生成温度 (Temperature)</label>
-        <div class="temp-row">
-          <input type="range" id="temperatureSlider" min="0" max="20" value="7" step="1">
-          <span class="temp-label" id="temperatureLabel">0.7</span>
-        </div>
-        <div class="instruction-hint">
-          低 (0.1-0.3): 严谨学术/公文 &nbsp;|&nbsp;
-          中 (0.5-0.7): 日常润色 &nbsp;|&nbsp;
-          高 (0.9-1.2): 创意写作
-        </div>
-      </div>
     </div>
 
-    <!-- ═══ Ollama 配置表单 ═══ -->
-    <div id="ollamaForm" class="dynamic-form">
+    <!-- API 连接配置 -->
+    <div class="section">
+      <div class="section-title"><span class="dot blue"></span> 连接配置</div>
+
       <div class="form-row">
-        <label for="ollamaBaseUrl">本地服务地址</label>
-        <input type="text" id="ollamaBaseUrl" value="http://localhost:11434"
-               placeholder="http://localhost:11434">
+        <label for="apiBaseUrl">API 地址 (Base URL)</label>
+        <input type="text" id="apiBaseUrl"
+               placeholder="https://api.deepseek.com">
+        <div class="hint">DeepSeek: api.deepseek.com | 硅基流动: api.siliconflow.cn/v1</div>
       </div>
+
       <div class="form-row">
-        <label for="ollamaModel">模型名称</label>
-        <input type="text" id="ollamaModel" value="deepseek-r1:latest"
+        <label for="apiKey">API Key</label>
+        <div class="password-wrap">
+          <input type="password" id="apiKey" placeholder="sk-...">
+          <button class="eye-btn" id="toggleKeyBtn">&#128065;</button>
+        </div>
+        <div class="hint">从 platform.deepseek.com → API Keys 获取</div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn primary" id="fetchModelsBtn">&#128269; 获取模型列表</button>
+        <span class="spinner" id="fetchModelsSpinner"></span>
+      </div>
+      <div class="status" id="fetchModelsStatus"></div>
+    </div>
+
+    <!-- 模型选择 -->
+    <div class="section" id="modelListGroup">
+      <div class="section-title"><span class="dot green"></span> 模型选择</div>
+      <div class="form-row">
+        <label for="modelSelect">当前模型</label>
+        <select id="modelSelect">
+          <option value="">请先获取模型列表...</option>
+        </select>
+      </div>
+      <div class="hint" id="modelCountHint"></div>
+
+      <!-- Ollama 手动输入（Ollama 模式下显示） -->
+      <div class="form-row" id="ollamaModelRow" style="display:none;">
+        <label for="ollamaModelInput">模型名称</label>
+        <input type="text" id="ollamaModelInput"
                placeholder="例如: deepseek-r1:latest, qwen3:14b">
       </div>
     </div>
 
-    <!-- 全局 System Prompt -->
-    <div class="form-row" style="margin-top: 10px;">
-      <label for="systemPrompt">全局指令 (System Prompt)</label>
-      <textarea id="systemPrompt" rows="2"
-        placeholder="你是一个专业的Word排版与文本处理专家...">你是一个Word排版与文本处理专家。用户会给你一段文本和一个指令。请直接输出处理后的文本。如果涉及格式调整，请用HTML标签包裹文本以表示格式。不要解释，只输出结果。</textarea>
-      <div class="instruction-hint">定义 AI 的行为和角色，所有请求都会带上此指令</div>
+    <!-- 参数配置 -->
+    <div class="section">
+      <div class="section-title"><span class="dot orange"></span> 生成参数</div>
+
+      <div class="form-row">
+        <label>Temperature: <span id="tempDisplay">0.7</span></label>
+        <div class="temp-row">
+          <span style="font-size:10px;color:#888;">严谨</span>
+          <input type="range" id="temperatureSlider" min="0" max="20" value="7" step="1">
+          <span style="font-size:10px;color:#888;">创意</span>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label for="systemPromptInput">System Prompt（全局 AI 指令）</label>
+        <textarea id="systemPromptInput" rows="2"
+          placeholder="定义 AI 的角色和行为模式..."></textarea>
+      </div>
     </div>
 
-    <!-- 配置按钮 -->
-    <div class="btn-row">
-      <button class="btn primary" id="saveConfigBtn">&#128190; 保存配置</button>
-      <button class="btn" id="testConnectionBtn">&#9889; 测试连接</button>
-      <span class="spinner" id="testSpinner"></span>
+    <!-- 操作按钮 -->
+    <div class="section">
+      <div class="btn-row stretch">
+        <button class="btn primary" id="saveSettingsBtn">&#128190; 保存配置</button>
+        <button class="btn" id="testConnBtn">&#9889; 测试连接</button>
+      </div>
+      <div class="status" id="settingsStatus"></div>
     </div>
-    <div class="status" id="testStatus"></div>
+
+    <div class="footer">配置自动保存到本地浏览器存储</div>
   </div>
-
-  <div class="divider"></div>
-
-  <!-- ═══════════════════════════════════════════════ -->
-  <!--  AI 文本处理区                                  -->
-  <!-- ═══════════════════════════════════════════════ -->
-  <div class="section">
-    <div class="section-title">
-      <span class="icon">&#9998;</span> AI 文本处理
-    </div>
-
-    <div class="form-row">
-      <label for="selectedText">待处理文本</label>
-      <textarea id="selectedText" rows="4"
-        placeholder="点击下方按钮提取 Word 当前选区文本，或手动粘贴..."></textarea>
-    </div>
-    <div class="btn-row">
-      <button class="btn" id="extractBtn">&#128203; 提取选区文本</button>
-    </div>
-
-    <div class="form-row" style="margin-top: 10px;">
-      <label for="instruction">AI 指令（自然语言描述你想要的操作）</label>
-      <textarea id="instruction" rows="2"
-        placeholder="例如：将这段话翻译为英文、润色优化、加粗标题并设为三号字、检查语法错误..."></textarea>
-    </div>
-
-    <div class="btn-row">
-      <button class="btn primary" id="executeBtn">&#9654; 执行 AI 指令</button>
-      <span class="spinner" id="executeSpinner"></span>
-    </div>
-    <div class="status" id="executeStatus"></div>
-  </div>
-
-  <div class="footer">OfficeAI 智能助手 v1.1.0 &mdash; DeepSeek API</div>
 
   <script src="taskpane.js"></script>
 </body>
