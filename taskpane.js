@@ -468,28 +468,29 @@
   }
 
   /**
-   * 对 Word.Style 对象应用属性修改
+   * 对单个段落对象应用格式属性修改
    *
    * 仅设置 props 中存在的属性，其他属性保持不变。
+   * 与 applyStyleProperties 不同，此函数直接操作段落而非样式定义。
    *
-   * @param {Word.Style} style - Office.js 样式对象
+   * @param {Word.Paragraph} p - Office.js 段落对象
    * @param {object} props - 属性键值对
    */
-  function applyStyleProperties(style, props) {
+  function applyParagraphFormatting(p, props) {
     if (props.fontCN || props.fontEN) {
-      style.font.name = props.fontCN || props.fontEN;
+      p.font.name = props.fontCN || props.fontEN;
     }
     if (typeof props.sizePt === 'number') {
-      style.font.size = props.sizePt;
+      p.font.size = props.sizePt;
     }
     if (typeof props.bold === 'boolean') {
-      style.font.bold = props.bold;
+      p.font.bold = props.bold;
     }
     if (typeof props.italic === 'boolean') {
-      style.font.italic = props.italic;
+      p.font.italic = props.italic;
     }
     if (typeof props.lineSpacing === 'number') {
-      style.paragraphFormat.lineSpacing = props.lineSpacing;
+      p.paragraphFormat.lineSpacing = props.lineSpacing;
     }
     if (typeof props.alignment === 'string') {
       var alignMap = {
@@ -498,35 +499,61 @@
         'right': 'Right',
         'justify': 'Justified'
       };
-      style.paragraphFormat.alignment = alignMap[props.alignment] || props.alignment;
+      p.paragraphFormat.alignment = alignMap[props.alignment] || props.alignment;
     }
     if (typeof props.firstLineIndent === 'number') {
-      style.paragraphFormat.firstLineIndent = props.firstLineIndent;
+      p.paragraphFormat.firstLineIndent = props.firstLineIndent;
     }
     if (typeof props.color === 'string') {
-      style.font.color = props.color;
+      p.font.color = props.color;
     }
   }
 
   /**
-   * 执行样式修改 — 通过 Office.js 修改文档样式定义
+   * 执行样式修改 — 遍历全文段落，对匹配样式的段落应用格式
    *
-   * 使用 context.document.styles.getByName() 获取样式对象，
-   * 然后仅修改指定的属性。
+   * Office.js 的 Style.font / Style.paragraphFormat 为只读，
+   * 无法直接通过 getByName() 修改样式定义。
+   * 改为遍历所有段落，检查 style 属性，对匹配的段落直接设格式。
    *
    * @param {object} action - 样式修改指令 {targetStyle: string, properties: object}
-   * @returns {Promise<string>} 成功时返回实际使用的样式名
+   * @returns {Promise<{styleName: string, count: number}>}
    */
   function executeStyleModification(action) {
     var name = action.targetStyle;
     var props = action.properties;
 
+    // 构建可能的样式名列表（英文 + 中文）
+    var targetNames = [name];
+    var cnStyleNameMap = {
+      'Heading 1': '标题 1', 'Heading 2': '标题 2', 'Heading 3': '标题 3',
+      'Heading 4': '标题 4', 'Heading 5': '标题 5', 'Heading 6': '标题 6',
+      'Normal': '正文'
+    };
+    if (cnStyleNameMap[name]) targetNames.push(cnStyleNameMap[name]);
+
     return Word.run(function (context) {
-      var style = context.document.styles.getByName(name);
-      applyStyleProperties(style, props);
-      return context.sync();
-    }).then(function () {
-      return name;
+      var paragraphs = context.document.body.paragraphs;
+      context.load(paragraphs, 'items');
+
+      return context.sync().then(function () {
+        var modifiedCount = 0;
+
+        for (var i = 0; i < paragraphs.items.length; i++) {
+          var p = paragraphs.items[i];
+          var styleName = '';
+          try { styleName = p.style || ''; } catch (e) { /* skip */ }
+
+          if (styleName && targetNames.indexOf(styleName) >= 0) {
+            applyParagraphFormatting(p, props);
+            modifiedCount++;
+          }
+        }
+
+        return context.sync().then(function () {
+          return { styleName: name, count: modifiedCount };
+        });
+      });
     });
   }
 
@@ -534,9 +561,10 @@
    * 构建样式修改成功的人类可读确认消息
    *
    * @param {object} action - 样式修改指令
+   * @param {number} count - 实际修改的段落数
    * @returns {string} 格式化的确认消息
    */
-  function buildStyleModificationMessage(action) {
+  function buildStyleModificationMessage(action, count) {
     var props = action.properties;
     var parts = [];
 
@@ -567,8 +595,13 @@
     };
     var displayName = cnStyleMap[action.targetStyle] || action.targetStyle;
 
-    return '✅ 已修改「' + displayName + '」样式：' + parts.join('，') +
-      '。\n\nℹ️ 文档中所有使用"' + displayName + '"样式的内容已自动更新。\n🔄 可按 Ctrl+Z 撤销本次修改。';
+    if (count === 0) {
+      return '⚠️ 未找到使用「' + displayName + '」样式的段落。请确认文档中存在该样式的内容。';
+    }
+
+    return '✅ 已修改 ' + count + ' 个使用「' + displayName + '」样式的段落：' + parts.join('，') +
+      '。\n\n📌 注意：由于 Office.js 限制，修改直接应用于段落而非样式定义。\n' +
+      '   新输入的文字可能不会自动继承此格式，需要再次执行。\n🔄 可按 Ctrl+Z 撤销本次修改。';
   }
 
   /* ═══════════════════════════════════════════════════════════
@@ -955,8 +988,8 @@
 
         if (styleAction) {
           // 样式修改模式：执行 Office.js 修改 + 显示确认消息
-          return executeStyleModification(styleAction).then(function () {
-            var friendlyMsg = buildStyleModificationMessage(styleAction);
+          return executeStyleModification(styleAction).then(function (result) {
+            var friendlyMsg = buildStyleModificationMessage(styleAction, result.count);
             renderChatMessage('assistant', friendlyMsg);
 
             conversationHistory.push({ role: 'user', content: finalUserContent });
@@ -2458,7 +2491,7 @@
      ═══════════════════════════════════════════════════════════ */
   Office.onReady(function (info) {
     if (info.host === Office.HostType.Word) {
-      console.log('OfficeAI v2.2: Word host detected');
+      console.log('OfficeAI v2.3: Word host detected');
 
       // 1. 缓存 DOM 引用（必须在 bindEvents 之前）
       cacheDom();
