@@ -873,3 +873,98 @@
   修改文件:
     taskpane.js — ~160 行变更（重写解析器 ~60 + 重写执行器 ~50 + 发送处理 ~50）
 
+
+================================================================================
+
+  [2026-06-15] 系列 commit 985a020~3ca481a — v2.3 样式修改功能完善
+  ─────────────────────────────────────────────────────────
+
+  【1】commit 985a020 — 扩展样式名映射 + 无匹配时列出文档样式
+  ─────────────────────────────────────────────────────────
+  问题: AI 将"图题"映射为 "Caption"，但中文 Office 中实际样式名为"题注"，
+        旧映射表只覆盖了 Heading/Normal，导致 0 个段落匹配。
+
+  修复:
+    - cnStyleNameMap 扩展为双向映射（英文↔中文）:
+      新增 Caption↔题注, Title↔标题, Subtitle↔副标题,
+      TOC Heading↔目录标题, TOC 1~3↔目录 1~3,
+      List Paragraph↔列表段落, Table Normal↔普通表格
+    - 反向查: 如果 AI 输出了中文名，也加入英文名候选
+    - executeStyleModification 中收集文档所有唯一样式名（按使用量排序）
+    - buildStyleModificationMessage: 无匹配时显示文档前12个样式名，引导用户重试
+    - AI Prompt: 新增中文 Office 样式名说明（题注、正文、标题等）
+
+  【2】commit a74efa6 — 修复行间距 API 不生效
+  ─────────────────────────────────────────────────────────
+  问题: AI 返回的 lineSpacing 属性通过 p.paragraphFormat.lineSpacing 设置后不生效。
+
+  根因: Office.js 中 Paragraph.paragraphFormat.lineSpacing 在样式修改遍历场景不可靠，
+        但 Paragraph.lineSpacing（直属性）已验证可用（applyFormatToParagraphs 一直在用）。
+
+  修复: p.paragraphFormat.lineSpacing → p.lineSpacing（一行改动）
+
+  【3】commit cd5546a + 9b3c283 — 新增段前段后 + 行单位换算支持
+  ─────────────────────────────────────────────────────────
+  新增属性:
+    - spaceBefore: 段前间距（磅值）
+    - spaceAfter: 段后间距（磅值）
+
+  三处改动:
+    - AI Prompt: 新增 spaceBefore/spaceAfter 属性定义及示例
+    - applyParagraphFormatting: 新增 p.spaceBefore / p.spaceAfter 设置
+    - buildStyleModificationMessage: 确认消息显示段前/段后
+
+  行单位换算（commit 9b3c283）:
+    用户说"段前一行"时 AI 需要换算为磅值。
+    Prompt 新增换算规则: 1行 ≈ 字号磅值
+    例: 12pt正文 → 段前1行=12pt, 段后1.5行=18pt
+
+  【4】commit ac70806 — 段前段后改用 paragraphFormat API
+  ─────────────────────────────────────────────────────────
+  问题: 标题1的 p.spaceBefore/spaceAfter 设置后在 Word 中未生效
+        （日志显示代码正常执行，但排版无变化）。
+
+  尝试修复: p.spaceBefore → p.paragraphFormat.spaceBefore
+             p.spaceAfter  → p.paragraphFormat.spaceAfter
+            （待用户验证是否生效）
+
+  【5】commit 3ca481a — 段落格式保留：AI 改写时自动沿用原样式
+  ─────────────────────────────────────────────────────────
+  问题: 用户选中带格式的文本让 AI 改写后插入，AI 只返回纯文本或简单 HTML，
+        原有段落格式（标题、正文缩进等）全部丢失。
+
+  架构: 三段联动
+
+    1. getSelectedTextWithStyles() 新函数（替换旧 getSelectedText）:
+       - 不仅返回文本，还遍历选区每个段落的 p.style 属性
+       - 映射为标准标注: [标题 1]、[正文]、[题注] 等
+       - 返回 {plainText, styledText}，styledText 形如:
+           [标题 1] 第一章 行业背景
+           [正文] 这是一段正文...
+           [标题 2] 技术趋势
+           [正文] 技术趋势描述...
+
+    2. DEFAULT_CONFIG.systemPrompt 新增"段落格式保留规则":
+       - 教 AI 识别格式标注并将其映射为 HTML 标签
+       - [标题 1]→<h1>, [标题 2]→<h2>, [标题 3]→<h3>, [正文]→<p style="text-indent:2em">
+       - 要求严格保留段落数量、顺序和层级关系
+
+    3. sendMessage() 上下文构建更新:
+       - 选区时优先使用 styledText（含格式标注）
+       - 附带标题"【参考上下文 - 段落格式已标注】" 提示 AI
+       - 光标段落/全文/预设模式不触发格式标注（仅纯文本）
+       - insertHtml 自动将 HTML 标签转为 Word 原生样式
+
+  样式名映射逻辑:
+    Heading 1/标题 1 → "标题 1"      Heading 2/标题 2 → "标题 2"
+    Heading 3/标题 3 → "标题 3"      Heading 4/标题 4 → "标题 4"
+    Caption/题注     → "题注"         Normal/正文     → "正文"
+    其他             → 原样保留
+
+  修改文件:
+    taskpane.js — ~92 行变更
+      getSelectedTextWithStyles: 新增 ~37 行
+      DEFAULT_CONFIG.systemPrompt: 新增 ~12 行
+      sendMessage 上下文构建: 重构 ~43 行
+
+================================================================================
