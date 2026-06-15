@@ -383,8 +383,48 @@
       showStatus(el.mainStatus, 'success', '✓ 「' + label + '」已应用。');
     }).catch(function (err) {
       console.error('executeNativeFormatPreset [' + presetKey + '] error:', err);
-      showStatus(el.mainStatus, 'error', '格式应用失败: ' + (err.message || '未知错误'));
+      var detail = err.message || '未知错误';
+      if (err.code) { detail = err.code + ': ' + detail; }
+      if (err.debugInfo) { console.error('debugInfo:', err.debugInfo); }
+      showStatus(el.mainStatus, 'error', '格式应用失败: ' + detail);
     });
+  }
+
+  /**
+   * 设置段落的内置标题样式（兼容中英文 Office 版本）
+   *
+   * Word 内置样式名随 Office 语言变化：
+   *   英文版: "Heading 1"  中文版: "标题 1"
+   * styleBuiltIn 属性（WordApi 1.3+）使用语言无关的键名如 "Heading1"
+   *
+   * @param {Word.Paragraph} p - 段落对象
+   * @param {number} level - 标题级别 1/2/3
+   * @returns {boolean} 是否成功设置
+   */
+  function setHeadingStyle(p, level) {
+    // 方法 1: styleBuiltIn（语言无关，WordApi 1.3+）
+    if (p.styleBuiltIn !== undefined && p.styleBuiltIn !== null) {
+      try {
+        p.styleBuiltIn = 'Heading' + level;
+        return true;
+      } catch (e) { /* 回退到下一方法 */ }
+    }
+
+    // 方法 2: style 属性 — 英文名
+    try {
+      p.style = 'Heading ' + level;
+      return true;
+    } catch (e) { /* 回退到下一方法 */ }
+
+    // 方法 3: style 属性 — 中文名
+    var cnNames = { 1: '标题 1', 2: '标题 2', 3: '标题 3' };
+    try {
+      p.style = cnNames[level];
+      return true;
+    } catch (e) {
+      console.warn('setHeadingStyle: 所有方法均失败 (level=' + level + ')');
+      return false;
+    }
   }
 
   /**
@@ -411,7 +451,7 @@
       switch (presetKey) {
         case 'format_title':
           if (hl > 0) {
-            p.style = 'Heading ' + hl;
+            setHeadingStyle(p, hl);
             p.font.bold = true;
             p.alignment = 'Centered';
           }
@@ -925,13 +965,10 @@
    * @param {object} stats
    */
   function executeSetHeading(p, level, stats) {
-    var styleMap = { 1: 'Heading 1', 2: 'Heading 2', 3: 'Heading 3' };
-    var styleName = styleMap[level] || 'Heading 2';
-    try {
-      p.style = styleName;
+    if (setHeadingStyle(p, level)) {
       stats.headings++;
-    } catch (e) {
-      console.warn('executeSetHeading failed:', e);
+    } else {
+      console.warn('executeSetHeading failed: unable to set heading style (level=' + level + ')');
     }
   }
 
