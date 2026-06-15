@@ -541,9 +541,11 @@
       p.lineSpacing = props.lineSpacing;
     }
     if (typeof props.spaceBefore === 'number') {
+      console.log('OfficeAI: applyParagraphFormatting spaceBefore=' + props.spaceBefore + 'pt');
       p.spaceBefore = props.spaceBefore;
     }
     if (typeof props.spaceAfter === 'number') {
+      console.log('OfficeAI: applyParagraphFormatting spaceAfter=' + props.spaceAfter + 'pt');
       p.spaceAfter = props.spaceAfter;
     }
     if (typeof props.alignment === 'string') {
@@ -609,6 +611,8 @@
         // 收集文档中所有唯一样式名（用于无匹配时提示）
         var allStylesInDoc = {};
 
+        console.log('OfficeAI: executeStyleModification target=' + name + ' candidates=' + JSON.stringify(targetNames));
+
         for (var i = 0; i < paragraphs.items.length; i++) {
           var p = paragraphs.items[i];
           var styleName = '';
@@ -617,6 +621,7 @@
           if (styleName) {
             allStylesInDoc[styleName] = (allStylesInDoc[styleName] || 0) + 1;
             if (targetNames.indexOf(styleName) >= 0) {
+              console.log('OfficeAI: matched paragraph #' + i + ' style="' + styleName + '" applying props:', JSON.stringify(props));
               applyParagraphFormatting(p, props);
               modifiedCount++;
             }
@@ -627,6 +632,7 @@
           var styleList = Object.keys(allStylesInDoc).sort(function (a, b) {
             return (allStylesInDoc[b] || 0) - (allStylesInDoc[a] || 0);
           });
+          console.log('OfficeAI: executeStyleModification done. modified=' + modifiedCount + ' totalStyles=' + styleList.length, styleList.slice(0, 10));
           return { styleName: name, count: modifiedCount, allStyles: styleList };
         });
       });
