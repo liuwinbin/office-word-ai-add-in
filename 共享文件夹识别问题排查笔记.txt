@@ -824,3 +824,52 @@
     manifest.xml  — 3 行变更（版本号 + 2 处 URL v 参数）
 
 ================================================================================
+
+
+
+================================================================================
+
+  [2026-06-15] commit 4b3abc6 / d4e2a82 — 样式修改 v2.3 修复（getByName → 段落遍历 + 多 JSON 解析）
+  ─────────────────────────────────────────────────────────
+  问题1 (commit 4b3abc6): 执行样式修改时报错 GeneralException
+  问题2 (commit d4e2a82): AI 返回多 JSON 分行输出时，解析器无法正确提取，JSON 原样显示在聊天框
+
+  根因1: Office.js 的 Style.font / Style.paragraphFormat 为只读属性，
+         getByName() 可以获取样式对象，但不能修改其属性 → context.sync() 抛出 GeneralException
+
+  根因2: 旧 parseStyleModificationJSON 使用正则 /{...[\s\S]*?}/ 提取 JSON，
+         遇到嵌套 {} （properties 内的子对象）时，非贪婪匹配停在第一个 } ，
+         导致 JSON 截断 → JSON.parse 失败 → 走正常聊天流程 → JSON 原样显示
+
+  修复1: 从"修改样式定义"改为"遍历段落并匹配样式名后逐段设格式"
+    - applyStyleProperties → applyParagraphFormatting（操作 Word.Paragraph 而非 Word.Style）
+    - executeStyleModification 改为:
+      1. 加载全文档段落 body.paragraphs
+      2. 检查每个段落的 style 属性（同时匹配英文名 "Heading 1" 和中文名 "标题 1"）
+      3. 对匹配段落直接设置 font/paragraphFormat 属性
+      4. 单次 Word.run + 两次 sync（加载→修改→同步）
+    - buildStyleModificationMessage 新增 count 参数，显示实际修改段落数
+    - 修改了 0 个段落时给出 ⚠️ 提示
+
+  修复2: 重写 JSON 解析器为 parseStyleModificationJSONs（返回数组，支持批量）
+    四层容错:
+      第1层: 整个响应 JSON.parse（处理单 JSON 一行的情形）
+      第2层: 按行拆分逐行 JSON.parse（处理多 JSON 分行，用户遇到的场景）
+      第3层: 括号计数状态机提取完整 JSON 对象:
+             - 跟踪 {} 嵌套深度
+             - 跟踪字符串引号内的 " 和 \ 转义状态
+             - depth==1 的 { 开始记录，depth==0 的 } 结束并尝试 JSON.parse
+             完全消除了嵌套 JSON 的误匹配问题
+      第4层: markdown 代码块提取（兜底）
+
+    批量执行:
+      - executeNext 递归链式执行，避免多个 Word.run 并发冲突
+      - 单个样式失败不影响后续样式执行
+      - 聚合结果显示（每个样式一行确认信息）
+
+  AI Prompt 更新:
+    新增规则: "如果需要同时修改多个样式，每个样式单独一行 JSON，不要用数组包裹"
+
+  修改文件:
+    taskpane.js — ~160 行变更（重写解析器 ~60 + 重写执行器 ~50 + 发送处理 ~50）
+
