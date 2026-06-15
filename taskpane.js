@@ -393,8 +393,11 @@
     '（例如"把标题3改成宋体小四加粗"、"正文行距改成固定值22磅"、"标题1改为居中"），\n' +
     '你必须**仅**输出以下格式的 JSON 对象（不要有任何解释、不要用 markdown 代码块包裹、直接输出纯 JSON）：\n\n' +
     '{"action":"modify_style","targetStyle":"Heading 3","properties":{"fontCN":"宋体","sizePt":12,"bold":true}}\n\n' +
-    '### targetStyle（必填）— 使用 Word 内部英文样式名：\n' +
-    '"Heading 1"=标题1, "Heading 2"=标题2, "Heading 3"=标题3, "Heading 4"=标题4, "Heading 5"=标题5, "Heading 6"=标题6, "Normal"=正文\n\n' +
+    '### targetStyle（必填）— 使用文档中实际存在的样式名：\n' +
+    '- 中文 Word 常见内置样式名: "标题 1"~"标题 6", "正文", "题注"(图题/表题), "标题", "副标题", "目录标题", "列表段落"\n' +
+    '- 英文 Word 内置样式名: "Heading 1"~"Heading 6", "Normal", "Caption", "Title", "Subtitle"\n' +
+    '- 如果文档使用了自定义样式（如"图题"、"表题"等），请直接使用该自定义样式名\n' +
+    '- **不确定时优先使用文档中可能存在的样式名**\n\n' +
     '### properties（必填，至少填一个；仅填用户明确提到的属性）：\n' +
     '| 属性 | 类型 | 说明 | 示例值 |\n' +
     '|------|------|------|--------|\n' +
@@ -566,14 +569,28 @@
     var name = action.targetStyle;
     var props = action.properties;
 
-    // 构建可能的样式名列表（英文 + 中文）
+    // 构建可能的样式名列表（英文 + 中文，双向覆盖）
     var targetNames = [name];
     var cnStyleNameMap = {
       'Heading 1': '标题 1', 'Heading 2': '标题 2', 'Heading 3': '标题 3',
       'Heading 4': '标题 4', 'Heading 5': '标题 5', 'Heading 6': '标题 6',
-      'Normal': '正文'
+      'Normal': '正文',
+      'Caption': '题注',
+      'Title': '标题',
+      'Subtitle': '副标题',
+      'TOC Heading': '目录标题',
+      'TOC 1': '目录 1', 'TOC 2': '目录 2', 'TOC 3': '目录 3',
+      'List Paragraph': '列表段落',
+      'Table Normal': '普通表格'
     };
+    // 双向：英文→中文 和 中文→英文 都加入候选
     if (cnStyleNameMap[name]) targetNames.push(cnStyleNameMap[name]);
+    // 反向查：如果 AI 输出了中文名，也加入英文名
+    for (var enName in cnStyleNameMap) {
+      if (cnStyleNameMap[enName] === name && targetNames.indexOf(enName) < 0) {
+        targetNames.push(enName);
+      }
+    }
 
     return Word.run(function (context) {
       var paragraphs = context.document.body.paragraphs;
@@ -581,20 +598,28 @@
 
       return context.sync().then(function () {
         var modifiedCount = 0;
+        // 收集文档中所有唯一样式名（用于无匹配时提示）
+        var allStylesInDoc = {};
 
         for (var i = 0; i < paragraphs.items.length; i++) {
           var p = paragraphs.items[i];
           var styleName = '';
           try { styleName = p.style || ''; } catch (e) { /* skip */ }
 
-          if (styleName && targetNames.indexOf(styleName) >= 0) {
-            applyParagraphFormatting(p, props);
-            modifiedCount++;
+          if (styleName) {
+            allStylesInDoc[styleName] = (allStylesInDoc[styleName] || 0) + 1;
+            if (targetNames.indexOf(styleName) >= 0) {
+              applyParagraphFormatting(p, props);
+              modifiedCount++;
+            }
           }
         }
 
         return context.sync().then(function () {
-          return { styleName: name, count: modifiedCount };
+          var styleList = Object.keys(allStylesInDoc).sort(function (a, b) {
+            return (allStylesInDoc[b] || 0) - (allStylesInDoc[a] || 0);
+          });
+          return { styleName: name, count: modifiedCount, allStyles: styleList };
         });
       });
     });
@@ -607,7 +632,7 @@
    * @param {number} count - 实际修改的段落数
    * @returns {string} 格式化的确认消息
    */
-  function buildStyleModificationMessage(action, count) {
+  function buildStyleModificationMessage(action, count, allStyles) {
     var props = action.properties;
     var parts = [];
 
@@ -634,16 +659,26 @@
     var cnStyleMap = {
       'Heading 1': '标题1', 'Heading 2': '标题2', 'Heading 3': '标题3',
       'Heading 4': '标题4', 'Heading 5': '标题5', 'Heading 6': '标题6',
-      'Normal': '正文'
+      'Normal': '正文', 'Caption': '题注（图题/表题）', 'Title': '标题',
+      'Subtitle': '副标题'
     };
     var displayName = cnStyleMap[action.targetStyle] || action.targetStyle;
 
     if (count === 0) {
-      return '⚠️ 未找到使用「' + displayName + '」样式的段落。\n   请确认：1) 文档中存在该样式的内容；2) 样式名称拼写正确。';
+      var hint = '⚠️ 未找到使用「' + displayName + '」样式的段落。\n\n' +
+        '已尝试匹配的样式名：' + action.targetStyle;
+      // 显示文档中实际存在的样式
+      if (allStyles && allStyles.length > 0) {
+        var topStyles = allStyles.slice(0, 12);
+        hint += '\n\n📋 文档中实际存在的样式（按使用量排序）：\n   ' + topStyles.join('、');
+        if (allStyles.length > 12) hint += ' …等' + allStyles.length + '种';
+        hint += '\n\n💡 请从上面列表中复制准确的样式名后重新发送指令。';
+      }
+      return hint;
     }
 
     return '✅ 已修改 ' + count + ' 个使用「' + displayName + '」样式的段落：' + parts.join('，') +
-      '。\n\n📌 修改已直接应用于段落格式（Office.js 不支持修改样式定义）。\n🔄 可按 Ctrl+Z 撤销本次修改。';
+      '。\n\n📌 修改已直接应用于段落格式。\n🔄 可按 Ctrl+Z 撤销本次修改。';
   }
 
   /* ═══════════════════════════════════════════════════════════
@@ -1036,7 +1071,7 @@
               // 全部完成 → 聚合确认消息
               var msgs = [];
               for (var ri = 0; ri < results.length; ri++) {
-                msgs.push(buildStyleModificationMessage(styleActions[ri], results[ri].count));
+                msgs.push(buildStyleModificationMessage(styleActions[ri], results[ri].count, results[ri].allStyles));
               }
               var combinedMsg = msgs.join('\n\n');
 
