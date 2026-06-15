@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -43,7 +43,11 @@
       text-transform: uppercase;
       letter-spacing: 0.5px;
       margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
+    .section-title .icon { font-size: 14px; }
 
     .form-row {
       margin-bottom: 8px;
@@ -75,13 +79,11 @@
       min-height: 60px;
     }
 
-    .dynamic-form {
-      display: none;
-    }
-    .dynamic-form.active {
-      display: block;
-    }
+    /* ── Dynamic form visibility ── */
+    .dynamic-form { display: none; }
+    .dynamic-form.active { display: block; }
 
+    /* ── Buttons ── */
     .btn {
       display: inline-flex;
       align-items: center;
@@ -107,6 +109,11 @@
     }
     .btn.primary:hover { background: #106ebe; }
     .btn.primary:active { background: #005a9e; }
+    .btn.success {
+      background: #107c10;
+      color: #fff;
+      border-color: #107c10;
+    }
     .btn:disabled {
       opacity: 0.5;
       cursor: not-allowed;
@@ -118,6 +125,51 @@
       margin-top: 8px;
     }
 
+    /* ── Password wrapper (show/hide toggle) ── */
+    .password-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .password-wrapper input {
+      padding-right: 32px;
+    }
+    .toggle-vis {
+      position: absolute;
+      right: 4px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 4px;
+      color: #888;
+      line-height: 1;
+    }
+    .toggle-vis:hover { color: #333; }
+
+    /* ── Temperature slider ── */
+    .temp-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .temp-row input[type="range"] {
+      flex: 1;
+      accent-color: #0078d4;
+    }
+    .temp-label {
+      min-width: 48px;
+      text-align: right;
+      font-weight: 600;
+      font-size: 12px;
+      color: #0078d4;
+    }
+    .temp-hint {
+      font-size: 10px;
+      color: #888;
+    }
+
+    /* ── Status ── */
     .status {
       margin-top: 8px;
       padding: 6px 8px;
@@ -129,6 +181,7 @@
     .status.error   { display: block; background: #fde7e9; color: #a4262c; border: 1px solid #f5c6c9; }
     .status.info    { display: block; background: #e7f0fe; color: #004e8c; border: 1px solid #c5d9f1; }
 
+    /* ── Spinner ── */
     .spinner {
       display: none;
       width: 14px;
@@ -161,50 +214,115 @@
       color: #999;
       text-align: center;
     }
+
+    /* ── Save indicator ── */
+    .save-indicator {
+      display: inline-block;
+      color: #107c10;
+      font-size: 11px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      margin-left: 8px;
+    }
+    .save-indicator.visible { opacity: 1; }
   </style>
 </head>
 <body>
+
+  <!-- ── Header ── -->
   <div class="header">
-    <h1>OfficeAI智能助手</h1>
+    <h1> OfficeAI 智能助手</h1>
   </div>
 
-  <!-- 模型配置区 -->
-  <div class="section">
-    <div class="section-title">模型配置</div>
+  <!-- ═══════════════════════════════════════════════ -->
+  <!--  模型配置区 (可折叠)                            -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="section" id="settingsSection">
+    <div class="section-title">
+      <span class="icon">&#9881;</span> 大模型配置
+      <span class="save-indicator" id="saveIndicator">&#10003; 已保存</span>
+    </div>
+
+    <!-- 模型服务商选择 -->
     <div class="form-row">
       <label for="modelProvider">模型服务商</label>
       <select id="modelProvider">
+        <option value="deepseek">DeepSeek API（推荐）</option>
         <option value="ollama">本地 Ollama</option>
-        <option value="deepseek">DeepSeek API</option>
       </select>
     </div>
 
-    <!-- Ollama 配置表单 -->
-    <div id="ollamaForm" class="dynamic-form active">
+    <!-- ═══ DeepSeek 配置表单 ═══ -->
+    <div id="deepseekForm" class="dynamic-form active">
+      <div class="form-row">
+        <label for="deepseekBaseUrl">API 地址 (Base URL)</label>
+        <input type="text" id="deepseekBaseUrl" value="https://api.deepseek.com"
+               placeholder="https://api.deepseek.com">
+        <div class="instruction-hint">
+          DeepSeek 官方: https://api.deepseek.com<br>
+          兼容 OpenAI 的第三方 API 也可填此（如硅基流动、OpenRouter）
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label for="deepseekApiKey">API Key</label>
+        <div class="password-wrapper">
+          <input type="password" id="deepseekApiKey" placeholder="sk-...">
+          <button class="toggle-vis" id="toggleKeyBtn" title="显示/隐藏">&#128065;</button>
+        </div>
+        <div class="instruction-hint">
+          从 <b>platform.deepseek.com</b> → API Keys 获取
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label for="deepseekModel">模型</label>
+        <select id="deepseekModel">
+          <option value="deepseek-chat">DeepSeek Chat (V3) — 通用对话/润色/翻译</option>
+          <option value="deepseek-reasoner">DeepSeek Reasoner (R1) — 深度推理/论文/复杂逻辑</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label>生成温度 (Temperature)</label>
+        <div class="temp-row">
+          <input type="range" id="temperatureSlider" min="0" max="20" value="7" step="1">
+          <span class="temp-label" id="temperatureLabel">0.7</span>
+        </div>
+        <div class="instruction-hint">
+          低 (0.1-0.3): 严谨学术/公文 &nbsp;|&nbsp;
+          中 (0.5-0.7): 日常润色 &nbsp;|&nbsp;
+          高 (0.9-1.2): 创意写作
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Ollama 配置表单 ═══ -->
+    <div id="ollamaForm" class="dynamic-form">
       <div class="form-row">
         <label for="ollamaBaseUrl">本地服务地址</label>
-        <input type="text" id="ollamaBaseUrl" value="http://localhost:11434" placeholder="http://localhost:11434">
+        <input type="text" id="ollamaBaseUrl" value="http://localhost:11434"
+               placeholder="http://localhost:11434">
       </div>
       <div class="form-row">
         <label for="ollamaModel">模型名称</label>
-        <input type="text" id="ollamaModel" value="deepseek-r1:latest" placeholder="deepseek-r1:latest">
+        <input type="text" id="ollamaModel" value="deepseek-r1:latest"
+               placeholder="例如: deepseek-r1:latest, qwen3:14b">
       </div>
     </div>
 
-    <!-- DeepSeek 配置表单 -->
-    <div id="deepseekForm" class="dynamic-form">
-      <div class="form-row">
-        <label for="deepseekBaseUrl">API Base URL</label>
-        <input type="text" id="deepseekBaseUrl" value="https://api.deepseek.com" placeholder="https://api.deepseek.com">
-      </div>
-      <div class="form-row">
-        <label for="deepseekApiKey">API Key</label>
-        <input type="password" id="deepseekApiKey" placeholder="sk-...">
-      </div>
+    <!-- 全局 System Prompt -->
+    <div class="form-row" style="margin-top: 10px;">
+      <label for="systemPrompt">全局指令 (System Prompt)</label>
+      <textarea id="systemPrompt" rows="2"
+        placeholder="你是一个专业的Word排版与文本处理专家...">你是一个Word排版与文本处理专家。用户会给你一段文本和一个指令。请直接输出处理后的文本。如果涉及格式调整，请用HTML标签包裹文本以表示格式。不要解释，只输出结果。</textarea>
+      <div class="instruction-hint">定义 AI 的行为和角色，所有请求都会带上此指令</div>
     </div>
 
+    <!-- 配置按钮 -->
     <div class="btn-row">
-      <button class="btn" id="testConnectionBtn">测试连接</button>
+      <button class="btn primary" id="saveConfigBtn">&#128190; 保存配置</button>
+      <button class="btn" id="testConnectionBtn">&#9889; 测试连接</button>
       <span class="spinner" id="testSpinner"></span>
     </div>
     <div class="status" id="testStatus"></div>
@@ -212,31 +330,37 @@
 
   <div class="divider"></div>
 
-  <!-- 交互执行区 -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <!--  AI 文本处理区                                  -->
+  <!-- ═══════════════════════════════════════════════ -->
   <div class="section">
-    <div class="section-title">AI文本处理</div>
+    <div class="section-title">
+      <span class="icon">&#9998;</span> AI 文本处理
+    </div>
+
     <div class="form-row">
       <label for="selectedText">待处理文本</label>
-      <textarea id="selectedText" rows="4" placeholder="点击下方按钮提取Word当前选区文本，或手动输入..."></textarea>
+      <textarea id="selectedText" rows="4"
+        placeholder="点击下方按钮提取 Word 当前选区文本，或手动粘贴..."></textarea>
     </div>
     <div class="btn-row">
-      <button class="btn" id="extractBtn">提取选区文本</button>
+      <button class="btn" id="extractBtn">&#128203; 提取选区文本</button>
     </div>
 
     <div class="form-row" style="margin-top: 10px;">
-      <label for="instruction">AI指令（自然语言）</label>
-      <textarea id="instruction" rows="2" placeholder="例如：将这段话排版为三号字并加粗标题，或者将文本翻译为英文..."></textarea>
-      <div class="instruction-hint">例如：将标题加粗并设为三号字、翻译成英文、调整段落格式等</div>
+      <label for="instruction">AI 指令（自然语言描述你想要的操作）</label>
+      <textarea id="instruction" rows="2"
+        placeholder="例如：将这段话翻译为英文、润色优化、加粗标题并设为三号字、检查语法错误..."></textarea>
     </div>
 
     <div class="btn-row">
-      <button class="btn primary" id="executeBtn">执行AI指令</button>
+      <button class="btn primary" id="executeBtn">&#9654; 执行 AI 指令</button>
       <span class="spinner" id="executeSpinner"></span>
     </div>
     <div class="status" id="executeStatus"></div>
   </div>
 
-  <div class="footer">OfficeAI智能助手 v1.0.0</div>
+  <div class="footer">OfficeAI 智能助手 v1.1.0 &mdash; DeepSeek API</div>
 
   <script src="taskpane.js"></script>
 </body>
