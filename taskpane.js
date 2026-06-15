@@ -2808,8 +2808,8 @@
           selection.insertHtml(_lastAIResponse, Word.InsertLocation.replace);
           return context.sync();
         }).then(function () {
-          // 替换时旧段落被删除 → 以插入前段落数为基准
-          return normalizeInsertedParagraphs(Math.max(0, beforeCount - 50));
+          // 替换后全文归一化（替换位置不确定，全文扫描稳妥）
+          return normalizeInsertedParagraphs(0);
         }).then(function (applied) {
           showStatus(el.chatStatus, 'success',
             '已替换选区。' + (applied > 0 ? ' 已为 ' + applied + ' 个段落应用样式。' : ''));
