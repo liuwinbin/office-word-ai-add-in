@@ -459,13 +459,13 @@
 
         case 'format_indent':
           if (hl === 0) {
-            p.paragraphFormat.firstLineIndent = opts.fontSize * opts.indentChars;
+            p.firstLineIndent = opts.fontSize * opts.indentChars;
           }
           break;
 
         case 'format_spacing':
-          p.paragraphFormat.spaceBefore = (hl >= 1) ? 12 : 0;
-          p.paragraphFormat.spaceAfter = 6;
+          p.spaceBefore = (hl >= 1) ? 12 : 0;
+          p.spaceAfter = 6;
           break;
 
         case 'format_font':
@@ -474,7 +474,7 @@
             p.font.size = opts.fontSize + (4 - hl) * 2;
           } else {
             p.font.size = opts.fontSize;
-            p.paragraphFormat.lineSpacing = opts.fontSize * opts.lineSpacing * 1.2;
+            p.lineSpacing = opts.fontSize * opts.lineSpacing * 1.2;
           }
           break;
       }
@@ -985,10 +985,10 @@
 
       p.font.name = opts.cnFont;
       p.font.size = opts.fontSize;
-      p.paragraphFormat.firstLineIndent = indentPt;
-      p.paragraphFormat.spaceBefore = 0;
-      p.paragraphFormat.spaceAfter = 0;
-      p.paragraphFormat.lineSpacing = lineSpacingPt;
+      p.firstLineIndent = indentPt;
+      p.spaceBefore = 0;
+      p.spaceAfter = 0;
+      p.lineSpacing = lineSpacingPt;
       stats.body++;
     } catch (e) {
       console.warn('executeSetBody failed:', e);
@@ -1023,10 +1023,10 @@
     try {
       p.font.name = 'Consolas';
       p.font.size = 10.5;
-      p.paragraphFormat.firstLineIndent = 0;
-      p.paragraphFormat.leftIndent = 28; // ~4字符缩进
-      p.paragraphFormat.spaceBefore = 2;
-      p.paragraphFormat.spaceAfter = 2;
+      p.firstLineIndent = 0;
+      p.leftIndent = 28; // ~4字符缩进
+      p.spaceBefore = 2;
+      p.spaceAfter = 2;
       stats.codeBlock++;
     } catch (e) {
       console.warn('executeSetCodeBlock failed:', e);
@@ -1060,9 +1060,9 @@
   function executeSetQuote(p, stats) {
     try {
       p.font.italic = true;
-      p.paragraphFormat.leftIndent = 36;
-      p.paragraphFormat.rightIndent = 36;
-      p.paragraphFormat.firstLineIndent = 0;
+      p.leftIndent = 36;
+      p.rightIndent = 36;
+      p.firstLineIndent = 0;
       // 灰色字体
       try { p.font.color = '#666666'; } catch (e) { /* 某些文档不支持颜色 */ }
       stats.quote++;

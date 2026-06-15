@@ -7,7 +7,7 @@
   xsi:type="TaskPaneApp">
 
   <Id>2a929139-573a-4b24-a4e2-b59fe277b693</Id>
-  <Version>1.0.0.1</Version>
+  <Version>1.0.0.2</Version>
   <ProviderName>OfficeAI</ProviderName>
   <DefaultLocale>zh-CN</DefaultLocale>
   <DisplayName DefaultValue="OfficeAI智能助手"/>
