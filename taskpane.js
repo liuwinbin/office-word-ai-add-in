@@ -411,60 +411,103 @@
     '### 关键规则（务必遵守）：\n' +
     '1. **仅**在用户明确要修改文档样式定义时才输出 JSON；正常问答/对话/知识性问题请正常回复文字\n' +
     '2. 输出**纯 JSON 对象**，第一字符必须是 {，不要用 ``` 代码块包裹\n' +
-    '3. properties 中只填写用户明确提到的属性，不要自作主张添加其他属性\n' +
-    '4. 如果用户的请求**不是**修改样式（如问问题/聊天/翻译等），请正常文字回复，绝对不要输出 JSON\n';
+    '3. 如果需要同时修改多个样式，每个样式单独一行 JSON，不要用数组包裹\n' +
+    '4. properties 中只填写用户明确提到的属性，不要自作主张添加其他属性\n' +
+    '5. 如果用户的请求**不是**修改样式（如问问题/聊天/翻译等），请正常文字回复，绝对不要输出 JSON\n';
 
   /* ═══════════════════════════════════════════════════════════
      样式修改模块 — JSON 解析与 Office.js 执行
      ═══════════════════════════════════════════════════════════ */
 
   /**
-   * 从 AI 响应中解析样式修改指令
+   * 从 AI 响应中解析样式修改指令（支持多 JSON）
    *
-   * 三层容错策略：
-   *   1. 直接 JSON.parse 整个响应
-   *   2. 提取 ```json ... ``` 代码块
-   *   3. 正则匹配包含 "action":"modify_style" 的 JSON 对象
+   * 四层容错策略：
+   *   1. 整个响应作为单 JSON 解析
+   *   2. 按行拆分，逐行 JSON.parse
+   *   3. 括号计数提取完整 JSON（正确处理嵌套 {} ）
+   *   4. 提取 ```json ... ``` 代码块
    *
    * @param {string} response - AI 原始输出文本
-   * @returns {object|null} 样式修改 action 对象，非样式修改返回 null
+   * @returns {Array<object>} 样式修改 action 对象数组（可能为空）
    */
-  function parseStyleModificationJSON(response) {
-    if (!response || typeof response !== 'string') return null;
+  function parseStyleModificationJSONs(response) {
+    if (!response || typeof response !== 'string') return [];
 
     var trimmed = response.trim();
+    var results = [];
 
-    // 第1层：整个响应就是 JSON
+    // 第1层：整个响应就是单 JSON
     try {
       var obj = JSON.parse(trimmed);
       if (obj && obj.action === 'modify_style' && obj.targetStyle && obj.properties) {
-        return obj;
+        return [obj];
       }
     } catch (e) { /* continue */ }
 
-    // 第2层：JSON 在 markdown 代码块中
+    // 第2层：按行拆分，逐行解析（处理多 JSON 分行输出的情况）
+    var lines = trimmed.split(/\r?\n/);
+    for (var li = 0; li < lines.length; li++) {
+      var line = lines[li].trim();
+      if (!line || line[0] !== '{') continue;
+      try {
+        var lineObj = JSON.parse(line);
+        if (lineObj && lineObj.action === 'modify_style' && lineObj.targetStyle && lineObj.properties) {
+          results.push(lineObj);
+        }
+      } catch (e) { /* skip invalid lines */ }
+    }
+    if (results.length > 0) return results;
+
+    // 第3层：括号计数提取完整 JSON 对象（正确处理嵌套 {} 和字符串内大括号）
+    var depth = 0, inString = false, escape = false;
+    var start = -1;
+    for (var i = 0; i < trimmed.length; i++) {
+      var ch = trimmed[i];
+      if (escape) { escape = false; continue; }
+      if (ch === '\\') { escape = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+
+      if (ch === '{') {
+        if (depth === 0) start = i;
+        depth++;
+      } else if (ch === '}') {
+        depth--;
+        if (depth === 0 && start >= 0) {
+          var candidate = trimmed.substring(start, i + 1);
+          try {
+            var candObj = JSON.parse(candidate);
+            if (candObj && candObj.action === 'modify_style' && candObj.targetStyle && candObj.properties) {
+              results.push(candObj);
+            }
+          } catch (e) { /* skip */ }
+          start = -1;
+        }
+      }
+    }
+    if (results.length > 0) return results;
+
+    // 第4层：markdown 代码块
     var m = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (m) {
       try {
-        var obj2 = JSON.parse(m[1].trim());
-        if (obj2 && obj2.action === 'modify_style' && obj2.targetStyle && obj2.properties) {
-          return obj2;
-        }
-      } catch (e) { /* continue */ }
+        var obj4 = JSON.parse(m[1].trim());
+        if (obj4 && obj4.action === 'modify_style') return [obj4];
+      } catch (e) {}
+      // 代码块内可能也有多行 JSON
+      var codeLines = m[1].trim().split(/\r?\n/);
+      for (var cl = 0; cl < codeLines.length; cl++) {
+        var cline = codeLines[cl].trim();
+        if (!cline || cline[0] !== '{') continue;
+        try {
+          var clObj = JSON.parse(cline);
+          if (clObj && clObj.action === 'modify_style') results.push(clObj);
+        } catch (e) {}
+      }
     }
 
-    // 第3层：正则提取第一个包含 modify_style 的 JSON 对象
-    var objMatch = trimmed.match(/\{\s*"action"\s*:\s*"modify_style"[\s\S]*?\}/);
-    if (objMatch) {
-      try {
-        var obj3 = JSON.parse(objMatch[0]);
-        if (obj3 && obj3.action === 'modify_style' && obj3.targetStyle && obj3.properties) {
-          return obj3;
-        }
-      } catch (e) { /* continue */ }
-    }
-
-    return null;
+    return results;
   }
 
   /**
@@ -596,12 +639,11 @@
     var displayName = cnStyleMap[action.targetStyle] || action.targetStyle;
 
     if (count === 0) {
-      return '⚠️ 未找到使用「' + displayName + '」样式的段落。请确认文档中存在该样式的内容。';
+      return '⚠️ 未找到使用「' + displayName + '」样式的段落。\n   请确认：1) 文档中存在该样式的内容；2) 样式名称拼写正确。';
     }
 
     return '✅ 已修改 ' + count + ' 个使用「' + displayName + '」样式的段落：' + parts.join('，') +
-      '。\n\n📌 注意：由于 Office.js 限制，修改直接应用于段落而非样式定义。\n' +
-      '   新输入的文字可能不会自动继承此格式，需要再次执行。\n🔄 可按 Ctrl+Z 撤销本次修改。';
+      '。\n\n📌 修改已直接应用于段落格式（Office.js 不支持修改样式定义）。\n🔄 可按 Ctrl+Z 撤销本次修改。';
   }
 
   /* ═══════════════════════════════════════════════════════════
@@ -983,38 +1025,56 @@
 
       // ═══ 第6步：调用 AI ═══
       return executeAI(messages, cfg).then(function (response) {
-        // ★ 检测是否为样式修改指令
-        var styleAction = parseStyleModificationJSON(response);
+        // ★ 检测是否为样式修改指令（支持多个样式同时修改）
+        var styleActions = parseStyleModificationJSONs(response);
 
-        if (styleAction) {
-          // 样式修改模式：执行 Office.js 修改 + 显示确认消息
-          return executeStyleModification(styleAction).then(function (result) {
-            var friendlyMsg = buildStyleModificationMessage(styleAction, result.count);
-            renderChatMessage('assistant', friendlyMsg);
+        if (styleActions.length > 0) {
+          // 样式修改模式：逐个执行，避免 Office.js 并发冲突
+          var results = [];
+          function executeNext(idx) {
+            if (idx >= styleActions.length) {
+              // 全部完成 → 聚合确认消息
+              var msgs = [];
+              for (var ri = 0; ri < results.length; ri++) {
+                msgs.push(buildStyleModificationMessage(styleActions[ri], results[ri].count));
+              }
+              var combinedMsg = msgs.join('\n\n');
 
-            conversationHistory.push({ role: 'user', content: finalUserContent });
-            conversationHistory.push({ role: 'assistant', content: friendlyMsg });
-            while (conversationHistory.length > MAX_HISTORY_ROUNDS * 2) {
-              conversationHistory.shift();
-              conversationHistory.shift();
+              renderChatMessage('assistant', combinedMsg);
+              conversationHistory.push({ role: 'user', content: finalUserContent });
+              conversationHistory.push({ role: 'assistant', content: combinedMsg });
+              while (conversationHistory.length > MAX_HISTORY_ROUNDS * 2) {
+                conversationHistory.shift();
+                conversationHistory.shift();
+              }
+              _lastAIResponse = combinedMsg;
+              el.insertLastBtn.style.display = '';
+              clearStatus(el.chatStatus);
+              return;
             }
 
-            _lastAIResponse = friendlyMsg;
-            el.insertLastBtn.style.display = '';
-            clearStatus(el.chatStatus);
-          }).catch(function (err) {
-            console.error('executeStyleModification error:', err);
+            return executeStyleModification(styleActions[idx]).then(function (result) {
+              results.push(result);
+              return executeNext(idx + 1);
+            }).catch(function (err) {
+              // 单个样式失败不终止，继续执行后续
+              console.error('executeStyleModification [' + styleActions[idx].targetStyle + '] error:', err);
+              results.push({ styleName: styleActions[idx].targetStyle, count: 0, error: err.message });
+              return executeNext(idx + 1);
+            });
+          }
+
+          return executeNext(0).catch(function (err) {
+            console.error('executeStyleModification chain error:', err);
             var errMsg = '❌ 样式修改失败：' + (err.message || '未知错误') +
               '\n\n请确认样式名称正确。可用的内置样式：Heading 1~6, Normal';
             renderChatMessage('assistant', errMsg);
-
             conversationHistory.push({ role: 'user', content: finalUserContent });
             conversationHistory.push({ role: 'assistant', content: errMsg });
             while (conversationHistory.length > MAX_HISTORY_ROUNDS * 2) {
               conversationHistory.shift();
               conversationHistory.shift();
             }
-
             _lastAIResponse = errMsg;
             el.insertLastBtn.style.display = '';
             clearStatus(el.chatStatus);
