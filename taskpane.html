@@ -267,6 +267,33 @@
     #modelListGroup { display: none; }
     #modelListGroup.visible { display: block; }
 
+    /* ═══ 进度条 ═══ */
+    .format-progress {
+      display: none;
+      margin-top: 6px;
+    }
+    .format-progress.active { display: block; }
+    .progress-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: #e0e0e0;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #0078d4, #00b7c3);
+      border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+    .progress-text {
+      font-size: 10px;
+      color: #888;
+      margin-top: 3px;
+      text-align: center;
+    }
+
     /* ═══ 已保存提示 ═══ */
     .saved-toast {
       position: fixed;
@@ -348,6 +375,22 @@
       </div>
     </div>
 
+    <!-- 一键全文排版（原生 Office.js） -->
+    <div class="section">
+      <div class="section-title"><span class="dot green"></span> 一键排版（原生）</div>
+      <button class="btn primary" id="autoFormatBtn" style="width:100%;">
+        &#128208; 一键全文排版
+      </button>
+      <span class="spinner" id="autoFormatSpinner"></span>
+      <div class="format-progress" id="formatProgress">
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="formatProgressBar"></div>
+        </div>
+        <div class="progress-text" id="formatProgressText">准备中...</div>
+      </div>
+      <div class="status" id="formatStatus"></div>
+    </div>
+
     <!-- AI 自定义指令 -->
     <div class="section">
       <div class="section-title"><span class="dot green"></span> AI 指令</div>
@@ -371,7 +414,7 @@
       </div>
     </div>
 
-    <div class="footer">OfficeAI v1.3 &mdash; DeepSeek API</div>
+    <div class="footer">OfficeAI v1.4 &mdash; DeepSeek API</div>
   </div>
 
   <!-- ═══════════════════════════════════════════ -->
@@ -462,6 +505,56 @@
         <label for="systemPromptInput">System Prompt（全局 AI 指令）</label>
         <textarea id="systemPromptInput" rows="2"
           placeholder="定义 AI 的角色和行为模式..."></textarea>
+      </div>
+    </div>
+
+    <!-- 排版参数（原生） -->
+    <div class="section">
+      <div class="section-title"><span class="dot green"></span> 排版参数（原生）</div>
+
+      <div class="form-row">
+        <label for="formatCnFont">中文字体</label>
+        <input type="text" id="formatCnFont" placeholder="微软雅黑">
+      </div>
+
+      <div class="form-row">
+        <label for="formatEnFont">英文字体</label>
+        <input type="text" id="formatEnFont" placeholder="Times New Roman">
+      </div>
+
+      <div class="form-row">
+        <label for="formatFontSize">正文字号 (pt)</label>
+        <input type="text" id="formatFontSize" placeholder="12">
+        <div class="hint">标准小四号为 12pt</div>
+      </div>
+
+      <div class="form-row">
+        <label for="formatLineSpacing">行距倍数</label>
+        <input type="text" id="formatLineSpacing" placeholder="1.5">
+        <div class="hint">1.0 = 单倍, 1.5 = 1.5倍, 2.0 = 双倍</div>
+      </div>
+
+      <div class="form-row">
+        <label for="formatIndent">首行缩进（字符数）</label>
+        <input type="text" id="formatIndent" placeholder="2">
+      </div>
+
+      <div class="form-row">
+        <label>
+          <input type="checkbox" id="formatCnEnSpacing" checked style="width:auto;margin-right:4px;">
+          启用中英文间自动加空格
+        </label>
+      </div>
+
+      <div class="form-row">
+        <label>
+          <input type="checkbox" id="formatRemoveEmpty" checked style="width:auto;margin-right:4px;">
+          自动清除连续空行
+        </label>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn primary" id="formatSaveBtn">&#128190; 保存排版参数</button>
       </div>
     </div>
 
