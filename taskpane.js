@@ -8,6 +8,30 @@
      ═══════════════════════════════════════════════════════════ */
   var el = {};
 
+  /* ═══════════════════════════════════════════════════════════
+     会话状态（IIFE 内部，不挂载 window）
+     ═══════════════════════════════════════════════════════════ */
+
+  /** @type {Array<{role: string, content: string}>} 对话历史（最多 10 轮 = 20 条消息） */
+  var conversationHistory = [];
+  var MAX_HISTORY_ROUNDS = 10;
+
+  /** @type {string|null} 当前光标所在段落的文本（截断 500 字） */
+  var currentCursorContext = null;
+
+  /** @type {string} 最后一条 AI 回复的完整内容（供替换/追加使用） */
+  var _lastAIResponse = '';
+
+  /** 文档全文缓存 */
+  var _docTextCache = { text: '', timestamp: 0, ttl: 30000 };
+
+  /** SelectionChanged 防抖计时器 */
+  var _selectionDebounceTimer = null;
+  var SELECTION_DEBOUNCE_MS = 300;
+
+  /** 上次已知文档 URL（用于检测文档切换） */
+  var _lastDocumentUrl = null;
+
   function cacheDom() {
     // 主界面
     el.mainPage         = document.getElementById('mainPage');
@@ -18,12 +42,21 @@
     el.extractSelBtn    = document.getElementById('extractSelectionBtn');
     el.readSpinner      = document.getElementById('readSpinner');
     el.documentText     = document.getElementById('documentText');
-    el.instructionInput = document.getElementById('instructionInput');
-    el.executeBtn       = document.getElementById('executeBtn');
-    el.insertBtn        = document.getElementById('insertBtn');
     el.mainStatus       = document.getElementById('mainStatus');
-    el.resultSection    = document.getElementById('resultSection');
-    el.resultText       = document.getElementById('resultText');
+
+    // 聊天 UI
+    el.contextBar       = document.getElementById('contextBar');
+    el.contextText      = document.getElementById('contextText');
+    el.clearContextBtn  = document.getElementById('clearContextBtn');
+    el.chatMessages     = document.getElementById('chatMessages');
+    el.chatEmptyHint    = document.getElementById('chatEmptyHint');
+    el.chatTyping       = document.getElementById('chatTyping');
+    el.chatInput        = document.getElementById('chatInput');
+    el.sendBtn          = document.getElementById('sendBtn');
+    el.clearChatBtn     = document.getElementById('clearChatBtn');
+    el.insertLastBtn    = document.getElementById('insertLastBtn');
+    el.chatSpinner      = document.getElementById('chatSpinner');
+    el.chatStatus       = document.getElementById('chatStatus');
     el.replaceBtn       = document.getElementById('replaceBtn');
     el.appendBtn        = document.getElementById('appendBtn');
     el.savedToast       = document.getElementById('savedToast');
@@ -121,6 +154,54 @@
     } catch (e) {
       showStatus(el.settingsStatus, 'error', '保存失败：本地存储空间不足。');
     }
+  }
+
+  /**
+   * 获取文档全文（带 30s 缓存，避免大文档重复抓取）
+   *
+   * 缓存策略：
+   *   - 命中缓存（30s 内）→ 直接返回 Promise.resolve(cached)
+   *   - 缓存过期/不存在 → Word.run 抓取 → 更新缓存
+   *
+   * @returns {Promise<string>} 文档全文
+   */
+  function getDocumentText() {
+    var now = Date.now();
+    if (_docTextCache.text && (now - _docTextCache.timestamp) < _docTextCache.ttl) {
+      return Promise.resolve(_docTextCache.text);
+    }
+
+    return Word.run(function (context) {
+      var body = context.document.body;
+      context.load(body, 'text');
+      return context.sync().then(function () {
+        _docTextCache.text = body.text || '';
+        _docTextCache.timestamp = Date.now();
+        return _docTextCache.text;
+      });
+    }).catch(function (err) {
+      console.warn('getDocumentText failed:', err);
+      // 返回过期缓存（如果有）
+      return _docTextCache.text || '';
+    });
+  }
+
+  /**
+   * 获取当前选区文本
+   *
+   * @returns {Promise<string>} 选区文本，无选区时返回空字符串
+   */
+  function getSelectedText() {
+    return Word.run(function (context) {
+      var selection = context.document.getSelection();
+      context.load(selection, 'text');
+      return context.sync().then(function () {
+        return (selection.text || '').trim();
+      });
+    }).catch(function (err) {
+      console.warn('getSelectedText failed:', err);
+      return '';
+    });
   }
 
   function applyConfigToUI(cfg) {
@@ -481,24 +562,16 @@
     }
   }
 
-  /* ═══════════════════════════════════════════════════════════
-     AI 执行核心
-     ═══════════════════════════════════════════════════════════ */
-  function executeAI(text, systemPrompt, userPrompt, actionLabel) {
-    clearStatus(el.mainStatus);
-    el.executeBtn.disabled = true;
-    showStatus(el.mainStatus, 'info', 'AI 正在处理（' + actionLabel + '）...');
-
-    var cfg = getConfigFromUI();
-    var messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt + '\n\n"""\n' + text + '\n"""' }
-    ];
-
-    var fetchPromise;
-
+  /**
+   * AI API 调用核心（纯函数，不操作 UI）
+   *
+   * @param {Array<{role: string, content: string}>} messages - 完整的消息数组
+   * @param {object} cfg - 配置对象（从 getConfigFromUI() 获取）
+   * @returns {Promise<string>} AI 返回的文本内容
+   */
+  function executeAI(messages, cfg) {
     if (cfg.provider === 'ollama') {
-      fetchPromise = fetch(cfg.apiBaseUrl + '/api/chat', {
+      return fetch(cfg.apiBaseUrl + '/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -513,56 +586,299 @@
         if (data && data.message && data.message.content) return data.message.content;
         throw new Error('Ollama 返回格式异常');
       });
-    } else {
-      if (!cfg.apiKey) throw new Error('请先在设置中配置 API Key。');
+    }
 
-      var endpoint = cfg.apiBaseUrl + '/chat/completions';
-      var body = {
-        model: cfg.model || 'deepseek-chat',
-        messages: messages,
-        stream: false,
-        temperature: cfg.temperature
-      };
+    // OpenAI 兼容 API（DeepSeek / 自定义）
+    if (!cfg.apiKey) throw new Error('请先在设置中配置 API Key。');
 
-      if (cfg.model && (cfg.model.includes('reasoner') || cfg.model.includes('r1'))) {
-        delete body.temperature;
+    var endpoint = cfg.apiBaseUrl + '/chat/completions';
+    var body = {
+      model: cfg.model || 'deepseek-chat',
+      messages: messages,
+      stream: false,
+      temperature: cfg.temperature
+    };
+
+    if (cfg.model && (cfg.model.includes('reasoner') || cfg.model.includes('r1'))) {
+      delete body.temperature;
+    }
+
+    return fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + cfg.apiKey
+      },
+      body: JSON.stringify(body)
+    }).then(function (res) {
+      if (!res.ok) {
+        return res.text().then(function (t) {
+          var msg = 'HTTP ' + res.status;
+          try { var d = JSON.parse(t); if (d.error && d.error.message) msg = d.error.message; } catch (e) {}
+          throw new Error(msg);
+        });
       }
+      return res.json();
+    }).then(function (data) {
+      if (data && data.choices && data.choices[0] && data.choices[0].message) {
+        return data.choices[0].message.content || '';
+      }
+      throw new Error('API 返回格式异常，未找到 choices[0].message.content');
+    });
+  }
 
-      fetchPromise = fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + cfg.apiKey
-        },
-        body: JSON.stringify(body)
-      }).then(function (res) {
-        if (!res.ok) {
-          return res.text().then(function (t) {
-            var msg = 'HTTP ' + res.status;
-            try { var d = JSON.parse(t); if (d.error && d.error.message) msg = d.error.message; } catch (e) {}
-            throw new Error(msg);
-          });
-        }
-        return res.json();
-      }).then(function (data) {
-        if (data && data.choices && data.choices[0] && data.choices[0].message) {
-          return data.choices[0].message.content || '';
-        }
-        throw new Error('API 返回格式异常，未找到 choices[0].message.content');
+  /* ═══════════════════════════════════════════════════════════
+     聊天引擎 — 消息发送、UI 渲染、上下文管理
+     ═══════════════════════════════════════════════════════════ */
+
+  /**
+   * 在聊天区渲染一条消息气泡
+   *
+   * @param {string} role - 'user' | 'assistant'
+   * @param {string} content - 消息内容
+   */
+  function renderChatMessage(role, content) {
+    // 隐藏空状态提示
+    el.chatEmptyHint.style.display = 'none';
+
+    var msgDiv = document.createElement('div');
+    msgDiv.className = 'chat-message ' + role;
+
+    var label = document.createElement('div');
+    label.className = 'chat-label';
+    label.textContent = role === 'user' ? '👤 你' : '🤖 AI';
+
+    var bubble = document.createElement('div');
+    bubble.className = 'chat-bubble';
+    bubble.textContent = content;
+
+    msgDiv.appendChild(label);
+    msgDiv.appendChild(bubble);
+    el.chatMessages.appendChild(msgDiv);
+
+    // 滚动到底部
+    scrollChatToBottom();
+  }
+
+  /**
+   * 聊天区滚动到底部
+   */
+  function scrollChatToBottom() {
+    // 使用父级 chatSection 的滚动
+    var section = el.chatMessages.parentElement;
+    if (section) {
+      section.scrollTop = section.scrollHeight;
+    }
+  }
+
+  /**
+   * 发送消息 — 聊天核心入口
+   *
+   * 处理流程：
+   *   1. 获取上下文（选区 > 光标段落 > 文档摘要 > 拒绝）
+   *   2. 渲染用户消息气泡
+   *   3. 构建带 history 的 messages 数组
+   *   4. 调用 executeAI
+   *   5. 渲染 AI 回复气泡 + 更新 history
+   *
+   * @param {string}  userMessage   - 用户输入的消息文本
+   * @param {string} [systemOverride] - 可选，覆盖默认 system prompt（AI 预设使用）
+   * @param {string} [contextText]    - 可选，预确定的上下文文本（AI 预设使用，跳过上下文探测）
+   */
+  function sendMessage(userMessage, systemOverride, contextText) {
+    if (!userMessage || !userMessage.trim()) return;
+
+    clearStatus(el.chatStatus);
+    el.sendBtn.disabled = true;
+    el.chatInput.disabled = true;
+    setSpinner(el.chatSpinner, true);
+
+    // ═══ 第1步：确定上下文 ═══
+    var contextPromise;
+    if (contextText !== undefined) {
+      // AI 预设已自带上下文，直接使用
+      contextPromise = Promise.resolve(contextText);
+    } else {
+      // 优先级：选区 > 光标段落 > 文档摘要 > 空字符串
+      contextPromise = getSelectedText().then(function (selText) {
+        if (selText) return selText; // 选区优先
+
+        if (currentCursorContext) return currentCursorContext; // 光标段落
+
+        // 尝试文档摘要
+        return getDocumentText().then(function (docText) {
+          if (docText) return docText.slice(0, 3000); // 截断防 Token 爆炸
+          return '';
+        });
       });
     }
 
-    fetchPromise.then(function (content) {
-      el.resultText.value = content;
-      el.resultSection.style.display = '';
-      showStatus(el.mainStatus, 'success', actionLabel + ' — 处理完成！可在下方预览结果。');
-      el.resultSection.scrollIntoView({ behavior: 'smooth' });
+    contextPromise.then(function (ctx) {
+      // ═══ 第2步：构建 system prompt ═══
+      var cfg = getConfigFromUI();
+      var systemPrompt = systemOverride || cfg.systemPrompt;
+
+      // 空选区时自动追加指令前缀
+      if (!contextText && !ctx && !systemOverride) {
+        systemPrompt = '请基于当前文档内容回答用户的问题。如果文档内容不足以回答问题，请如实说明。\n\n' + systemPrompt;
+      }
+
+      // ═══ 第3步：构建 user message（含上下文注入） ═══
+      var finalUserContent = userMessage;
+      if (ctx && !contextText) {
+        // 有上下文且非 AI 预设模式：注入上下文
+        finalUserContent = '【参考上下文】：\n"""\n' + ctx + '\n"""\n\n【用户问题】：' + userMessage;
+      }
+
+      // ═══ 第4步：构建完整 messages 数组（system + history + 当前 user） ═══
+      var messages = [{ role: 'system', content: systemPrompt }];
+
+      // 追加对话历史
+      for (var i = 0; i < conversationHistory.length; i++) {
+        messages.push(conversationHistory[i]);
+      }
+
+      // 追加当前用户消息
+      messages.push({ role: 'user', content: finalUserContent });
+
+      // ═══ 第5步：渲染用户消息 ═══
+      renderChatMessage('user', userMessage);
+
+      // ═══ 第6步：调用 AI ═══
+      return executeAI(messages, cfg).then(function (response) {
+        // 渲染 AI 回复
+        renderChatMessage('assistant', response);
+
+        // 更新对话历史（最多 10 轮 = 20 条）
+        conversationHistory.push({ role: 'user', content: finalUserContent });
+        conversationHistory.push({ role: 'assistant', content: response });
+        while (conversationHistory.length > MAX_HISTORY_ROUNDS * 2) {
+          conversationHistory.shift();
+          conversationHistory.shift();
+        }
+
+        // 缓存最后一条 AI 回复（供插入/替换使用）
+        _lastAIResponse = response;
+        el.insertLastBtn.style.display = '';
+
+        clearStatus(el.chatStatus);
+      });
     }).catch(function (err) {
-      console.error('AI error:', err);
-      showStatus(el.mainStatus, 'error', '处理失败: ' + (err.message || '未知错误'));
+      console.error('sendMessage error:', err);
+      showStatus(el.chatStatus, 'error', '发送失败: ' + (err.message || '未知错误'));
     }).finally(function () {
-      el.executeBtn.disabled = false;
+      el.sendBtn.disabled = false;
+      el.chatInput.disabled = false;
+      setSpinner(el.chatSpinner, false);
+      el.chatInput.focus();
     });
+  }
+
+  /**
+   * 清空对话历史与聊天区 DOM
+   */
+  function clearChat() {
+    conversationHistory = [];
+    _lastAIResponse = '';
+    currentCursorContext = null;
+
+    // 清空聊天 DOM
+    el.chatMessages.innerHTML = '';
+    // 恢复空状态提示
+    var hint = document.createElement('div');
+    hint.className = 'chat-empty-hint';
+    hint.id = 'chatEmptyHint';
+    hint.innerHTML = '&#128172; 输入问题，AI 将基于文档内容回答<br><small>选中文本后提问可精确定位上下文</small>';
+    el.chatMessages.appendChild(hint);
+    el.chatEmptyHint = hint;
+
+    // 隐藏上下文提示条
+    el.contextBar.classList.remove('visible');
+    el.insertLastBtn.style.display = 'none';
+    clearStatus(el.chatStatus);
+  }
+
+  /**
+   * 更新光标上下文提示条
+   *
+   * @param {string} text - 段落文本（原始，将截断显示前 20 字）
+   */
+  function updateContextIndicator(text) {
+    if (!text) {
+      el.contextBar.classList.remove('visible');
+      return;
+    }
+    el.contextText.textContent = text.slice(0, 20) + (text.length > 20 ? '...' : '');
+    el.contextBar.classList.add('visible');
+  }
+
+  /**
+   * 清除光标定位上下文，切换回全文模式
+   */
+  function clearCursorContext() {
+    currentCursorContext = null;
+    el.contextBar.classList.remove('visible');
+    clearStatus(el.chatStatus);
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     光标位置感知 — SelectionChanged 事件处理
+     ═══════════════════════════════════════════════════════════ */
+
+  /**
+   * 处理光标位置变更（核心逻辑，不含防抖）
+   *
+   * 安全策略：
+   *   - try-catch 包裹整个 Word.run，防止页眉/页脚/表格等特殊区域抛异常
+   *   - 空白段落不覆盖 currentCursorContext（保留上一次有效上下文）
+   *   - 检测文档 URL 变化 → 自动清空对话历史
+   */
+  function handleSelectionChanged() {
+    try {
+      Word.run(function (context) {
+        var doc = context.document;
+        doc.load('url');
+
+        var sel = doc.getSelection();
+        var paras = sel.paragraphs;
+        context.load(paras, 'items');
+
+        return context.sync().then(function () {
+          // 检测文档切换 → 清空对话历史
+          if (_lastDocumentUrl && doc.url && doc.url !== _lastDocumentUrl) {
+            conversationHistory = [];
+            currentCursorContext = null;
+            _lastAIResponse = '';
+            el.insertLastBtn.style.display = 'none';
+            console.log('OfficeAI: 检测到文档切换，已清空对话历史');
+          }
+          _lastDocumentUrl = doc.url;
+
+          // 获取光标所在段落文本
+          var items = paras.items;
+          if (!items || items.length === 0) return;
+          var text = (items[0].text || '').trim();
+          if (text.length === 0) return; // 空白处保留上一次有效上下文
+          currentCursorContext = text.slice(0, 500);
+          updateContextIndicator(text);
+        });
+      }).catch(function (err) {
+        console.warn('SelectionChanged handler suppressed:', err.message);
+      });
+    } catch (e) {
+      console.warn('SelectionChanged outer error:', e);
+    }
+  }
+
+  /**
+   * 防抖包装的 SelectionChanged 处理器（300ms）
+   *
+   * 避免快速移动光标时频繁触发 Office.js API 调用。
+   * 每次新事件到达时重置计时器，只有 300ms 内无新事件才真正执行。
+   */
+  function debouncedSelectionChangedHandler() {
+    if (_selectionDebounceTimer) clearTimeout(_selectionDebounceTimer);
+    _selectionDebounceTimer = setTimeout(handleSelectionChanged, SELECTION_DEBOUNCE_MS);
   }
 
   /* ═══════════════════════════════════════════════════════════
@@ -1446,6 +1762,21 @@
      ═══════════════════════════════════════════════════════════ */
   function bindEvents() {
 
+    // --- SelectionChanged 光标位置感知（仅 Word 宿主） ---
+    if (Office.context.document && Office.context.document.addHandlerAsync) {
+      Office.context.document.addHandlerAsync(
+        Office.EventType.DocumentSelectionChanged,
+        debouncedSelectionChangedHandler,
+        function (result) {
+          if (result.status === Office.AsyncResultStatus.Succeeded) {
+            console.log('OfficeAI: SelectionChanged handler registered');
+          } else {
+            console.warn('OfficeAI: SelectionChanged registration failed:', result.error);
+          }
+        }
+      );
+    }
+
     // --- 视图切换 ---
     el.openSettingsBtn.addEventListener('click', function () {
       showPage('settings');
@@ -1695,18 +2026,17 @@
       el.readFullDocBtn.disabled = true;
       el.extractSelBtn.disabled = true;
 
-      Word.run(function (context) {
-        var body = context.document.body;
-        context.load(body, 'text');
-        return context.sync().then(function () {
-          if (!body.text || body.text.trim().length === 0) {
-            showStatus(el.mainStatus, 'info', '文档为空，请先输入内容。');
-          } else {
-            el.documentText.value = body.text;
-            showStatus(el.mainStatus, 'success',
-              '已读取全文（约 ' + body.text.length + ' 字符）。');
-          }
-        });
+      // 强制刷新缓存
+      _docTextCache.timestamp = 0;
+
+      getDocumentText().then(function (text) {
+        if (!text || text.trim().length === 0) {
+          showStatus(el.mainStatus, 'info', '文档为空，请先输入内容。');
+        } else {
+          el.documentText.value = text;
+          showStatus(el.mainStatus, 'success',
+            '已读取全文（约 ' + text.length + ' 字符）。');
+        }
       }).catch(function (err) {
         showStatus(el.mainStatus, 'error', '读取全文失败: ' + (err.message || '未知错误'));
       }).finally(function () {
@@ -1756,68 +2086,104 @@
           return;
         }
 
-        // AI 预设：需要 AI 重写文本内容
+        // AI 预设：通过聊天引擎发送
         var preset = AI_PRESET_PROMPTS[presetKey];
         if (!preset) return;
 
         var text = el.documentText.value.trim();
+        // 空选区/无文档时尝试使用光标上下文或文档缓存
+        if (!text && currentCursorContext) {
+          text = currentCursorContext;
+        }
         if (!text) {
-          showStatus(el.mainStatus, 'error', '请先读取文档或粘贴文本。');
+          showStatus(el.mainStatus, 'error', '请先读取文档、选中文本，或将光标移至目标段落。');
           return;
         }
 
-        el.instructionInput.value = preset.prompt;
-        executeAI(text, preset.systemAddon, preset.prompt, preset.label);
+        // 构建完整提示词（预设 prompt + 文档文本作为上下文）
+        var fullPrompt = preset.prompt + '\n\n"""\n' + text + '\n"""';
+        sendMessage(fullPrompt, preset.systemAddon, text);
       });
     });
 
-    // --- 自定义指令执行 ---
-    el.executeBtn.addEventListener('click', function () {
-      var text = el.documentText.value.trim();
-      var instruction = el.instructionInput.value.trim();
-      var cfg = getConfigFromUI();
-
-      if (!text) {
-        showStatus(el.mainStatus, 'error', '请先读取文档或粘贴文本。');
+    // --- 聊天：发送按钮 ---
+    el.sendBtn.addEventListener('click', function () {
+      var msg = el.chatInput.value.trim();
+      if (!msg) {
+        showStatus(el.chatStatus, 'error', '请输入问题或指令。');
         return;
       }
-      if (!instruction) {
-        showStatus(el.mainStatus, 'error', '请输入 AI 指令或点击排版预设按钮。');
-        return;
-      }
-
-      executeAI(text, cfg.systemPrompt, instruction, '自定义指令');
+      el.chatInput.value = '';
+      sendMessage(msg);
     });
 
-    // --- 替换选区 ---
-    el.replaceBtn.addEventListener('click', function () {
-      var content = el.resultText.value;
-      if (!content) return;
+    // --- 聊天：Enter 发送，Shift+Enter 换行 ---
+    el.chatInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        el.sendBtn.click();
+      }
+    });
+
+    // --- 聊天：清空对话 ---
+    el.clearChatBtn.addEventListener('click', function () {
+      clearChat();
+    });
+
+    // --- 上下文提示条：清除光标定位 ---
+    el.clearContextBtn.addEventListener('click', function () {
+      clearCursorContext();
+      showStatus(el.chatStatus, 'info', '已切换为全文模式。');
+    });
+
+    // --- 聊天：插入最后一条 AI 回复到文档光标处 ---
+    el.insertLastBtn.addEventListener('click', function () {
+      if (!_lastAIResponse) return;
 
       Word.run(function (context) {
         var selection = context.document.getSelection();
-        selection.insertHtml(content, Word.InsertLocation.replace);
+        selection.insertText(_lastAIResponse, Word.InsertLocation.replace);
         return context.sync();
       }).then(function () {
-        showStatus(el.mainStatus, 'success', '已替换选区。');
+        showStatus(el.chatStatus, 'success', '已插入到文档光标处。');
       }).catch(function (err) {
-        showStatus(el.mainStatus, 'error', '替换失败: ' + (err.message || '未知错误'));
+        showStatus(el.chatStatus, 'error', '插入失败: ' + (err.message || '未知错误'));
       });
     });
 
-    // --- 追加到文末 ---
+    // --- 替换选区（使用最后一条 AI 回复） ---
+    el.replaceBtn.addEventListener('click', function () {
+      if (!_lastAIResponse) {
+        showStatus(el.chatStatus, 'error', '暂无 AI 回复可供替换。');
+        return;
+      }
+
+      Word.run(function (context) {
+        var selection = context.document.getSelection();
+        selection.insertText(_lastAIResponse, Word.InsertLocation.replace);
+        return context.sync();
+      }).then(function () {
+        showStatus(el.chatStatus, 'success', '已替换选区。');
+      }).catch(function (err) {
+        showStatus(el.chatStatus, 'error', '替换失败: ' + (err.message || '未知错误'));
+      });
+    });
+
+    // --- 追加到文末（使用最后一条 AI 回复） ---
     el.appendBtn.addEventListener('click', function () {
-      var content = el.resultText.value;
-      if (!content) return;
+      if (!_lastAIResponse) {
+        showStatus(el.chatStatus, 'error', '暂无 AI 回复可供追加。');
+        return;
+      }
 
       Word.run(function (context) {
         var body = context.document.body;
-        body.insertHtml(content, Word.InsertLocation.end);
+        body.insertText(_lastAIResponse, Word.InsertLocation.end);
         return context.sync();
       }).then(function () {
-        showStatus(el.mainStatus, 'success', '已追加到文档末尾。');
+        showStatus(el.chatStatus, 'success', '已追加到文档末尾。');
       }).catch(function (err) {
-        showStatus(el.mainStatus, 'error', '追加失败: ' + (err.message || '未知错误'));
+        showStatus(el.chatStatus, 'error', '追加失败: ' + (err.message || '未知错误'));
       });
     });
 
@@ -1840,7 +2206,7 @@
      ═══════════════════════════════════════════════════════════ */
   Office.onReady(function (info) {
     if (info.host === Office.HostType.Word) {
-      console.log('OfficeAI v1.7: Word host detected');
+      console.log('OfficeAI v2.0: Word host detected');
 
       // 1. 缓存 DOM 引用（必须在 bindEvents 之前）
       cacheDom();
@@ -1865,7 +2231,7 @@
       clearStatus(el.fetchModelsStatus);
       clearStatus(el.formatStatus);
 
-      console.log('OfficeAI v1.7: Initialization complete');
+      console.log('OfficeAI v2.0: Initialization complete');
     } else {
       console.warn('OfficeAI: Unsupported host:', info.host);
     }

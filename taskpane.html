@@ -312,6 +312,135 @@
       z-index: 10;
     }
     .saved-toast.show { opacity: 1; }
+
+    /* ═══ 光标上下文提示条 ═══ */
+    .context-bar {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      background: #e7f0fe;
+      border: 1px solid #c5d9f1;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      font-size: 11px;
+      color: #004e8c;
+      flex-shrink: 0;
+    }
+    .context-bar.visible { display: flex; }
+    .context-icon { flex-shrink: 0; font-size: 13px; }
+    .context-text {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .context-clear-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #666;
+      font-size: 13px;
+      padding: 2px 6px;
+      border-radius: 2px;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+    .context-clear-btn:hover { background: #c5d9f1; color: #333; }
+
+    /* ═══ 聊天消息区 ═══ */
+    .chat-section {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 120px;
+      max-height: 300px;
+      padding: 8px 10px;
+    }
+    .chat-messages {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+    .chat-empty-hint {
+      text-align: center;
+      color: #999;
+      font-size: 12px;
+      padding: 20px 10px;
+      line-height: 1.6;
+    }
+    .chat-empty-hint small {
+      font-size: 10px;
+      color: #bbb;
+    }
+    .chat-message {
+      display: flex;
+      flex-direction: column;
+      max-width: 90%;
+      animation: fadeIn 0.2s ease;
+    }
+    .chat-message.user {
+      align-self: flex-end;
+      align-items: flex-end;
+    }
+    .chat-message.assistant {
+      align-self: flex-start;
+      align-items: flex-start;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .chat-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: #888;
+      margin-bottom: 2px;
+      padding: 0 4px;
+    }
+    .chat-bubble {
+      padding: 7px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      line-height: 1.55;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .chat-message.user .chat-bubble {
+      background: #0078d4;
+      color: #fff;
+      border-bottom-right-radius: 2px;
+    }
+    .chat-message.assistant .chat-bubble {
+      background: #fff;
+      color: #1a1a1a;
+      border: 1px solid #e0e0e0;
+      border-bottom-left-radius: 2px;
+    }
+    .chat-typing {
+      align-self: flex-start;
+      padding: 8px 12px;
+      font-size: 11px;
+      color: #888;
+      display: none;
+    }
+    .chat-typing.active { display: block; }
+
+    /* ═══ 对话输入行 ═══ */
+    .chat-input-row {
+      display: flex;
+      gap: 6px;
+      align-items: flex-end;
+    }
+    .chat-input-row textarea {
+      flex: 1;
+      min-height: 36px;
+      max-height: 72px;
+    }
+    .chat-input-row .btn {
+      flex-shrink: 0;
+      align-self: flex-end;
+      padding: 6px 14px;
+    }
   </style>
 </head>
 <body>
@@ -391,30 +520,45 @@
       <div class="status" id="formatStatus"></div>
     </div>
 
-    <!-- AI 自定义指令 -->
+    <!-- 光标上下文提示条 -->
+    <div class="context-bar" id="contextBar">
+      <span class="context-icon">&#128205;</span>
+      <span class="context-text" id="contextText"></span>
+      <button class="context-clear-btn" id="clearContextBtn">&#10005; 清除</button>
+    </div>
+
+    <!-- 对话消息区 -->
+    <div class="section chat-section" id="chatSection">
+      <div class="chat-messages" id="chatMessages">
+        <div class="chat-empty-hint" id="chatEmptyHint">
+          &#128172; 输入问题，AI 将基于文档内容回答<br>
+          <small>选中文本后提问可精确定位上下文</small>
+        </div>
+      </div>
+      <div class="chat-typing" id="chatTyping">&#8226;&#8226;&#8226; AI 正在思考...</div>
+    </div>
+
+    <!-- 对话输入区 -->
     <div class="section">
-      <div class="section-title"><span class="dot green"></span> AI 指令</div>
-      <textarea id="instructionInput" rows="2"
-        placeholder="输入自定义指令，例如：将第三段改为疑问句、检查语法错误、把数据改成表格..."></textarea>
-      <div class="btn-row stretch">
-        <button class="btn primary" id="executeBtn">&#9654; 执行</button>
-        <button class="btn success" id="insertBtn" style="display:none;">&#128190; 插入文档</button>
+      <div class="chat-input-row">
+        <textarea id="chatInput" rows="2"
+          placeholder="输入问题或指令...（Enter 发送，Shift+Enter 换行）"></textarea>
+        <button class="btn primary" id="sendBtn">&#9654; 发送</button>
       </div>
-      <div class="status" id="mainStatus"></div>
+      <div class="btn-row">
+        <button class="btn small" id="clearChatBtn">&#128465; 清空对话</button>
+        <button class="btn small success" id="insertLastBtn" style="display:none;">&#128190; 插入文档</button>
+        <button class="btn small" id="replaceBtn">&#8634; 替换选区</button>
+        <button class="btn small" id="appendBtn">&#10010; 追加到文末</button>
+        <span class="spinner" id="chatSpinner"></span>
+      </div>
+      <div class="status" id="chatStatus"></div>
     </div>
 
-    <!-- 待处理结果预览（隐藏） -->
-    <div class="section" id="resultSection" style="display:none;">
-      <div class="section-title"><span class="dot green"></span> AI 处理结果</div>
-      <textarea id="resultText" rows="4" readonly
-        placeholder="AI 处理结果将显示在这里..."></textarea>
-      <div class="btn-row stretch">
-        <button class="btn success" id="replaceBtn">&#8634; 替换选区</button>
-        <button class="btn" id="appendBtn">&#10010; 追加到文末</button>
-      </div>
-    </div>
+    <!-- 主状态（供排版预设等使用） -->
+    <div class="status" id="mainStatus" style="margin-top:6px;"></div>
 
-    <div class="footer">OfficeAI v1.9 &mdash; DeepSeek API</div>
+    <div class="footer">OfficeAI v2.0 &mdash; DeepSeek API</div>
   </div>
 
   <!-- ═══════════════════════════════════════════ -->
@@ -570,6 +714,6 @@
     <div class="footer">配置自动保存到本地浏览器存储</div>
   </div>
 
-  <script src="taskpane.js?v=1.9"></script>
+  <script src="taskpane.js?v=2.0"></script>
 </body>
 </html>

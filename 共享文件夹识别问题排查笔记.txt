@@ -485,3 +485,102 @@
     taskpane.html — 版本号 v1.6 → v1.7
 
 ================================================================================
+
+  [2026-06-15] commit (当前) — 修复中文 Word 标题样式 InvalidArgument v1.8
+  ────────────────────────────────────────────────────────────────────────
+  问题: format_title（标题加粗居中）在中文版 Word 上报错
+        "格式应用失败: InvalidArgument"
+
+  根因:
+    Word 内置样式名随 Office 语言包本地化:
+      - 英文 Word: "Heading 1", "Heading 2", "Heading 3"
+      - 中文 Word: "标题 1", "标题 2", "标题 3"
+    旧代码使用 `p.style = 'Heading ' + level`，在中文 Word 上
+    Office.js 无法识别英文样式名 → InvalidArgument
+
+  解决方案:
+    新增 setHeadingStyle(p, level) 函数，实现三级回退策略:
+
+      方法 1 — styleBuiltIn（语言无关，WordApi 1.3+）:
+        p.styleBuiltIn = 'Heading' + level
+        → 最可靠，不依赖 Office 语言包
+
+      方法 2 — style 属性（英文名）:
+        p.style = 'Heading ' + level
+        → 兼容旧版 Word（<1.3），英文环境可用
+
+      方法 3 — style 属性（中文名）:
+        p.style = cnNames[level]  // {1:'标题 1', 2:'标题 2', 3:'标题 3'}
+        → 兼容中文版旧 Word
+
+    同时重构 executeSetHeading() 使用 setHeadingStyle()
+
+  修改文件:
+    taskpane.js  — 新增 setHeadingStyle() + 重构 executeSetHeading()
+
+================================================================================
+
+  [2026-06-15] commit 1237830 — 修复 paragraphFormat undefined 错误 v1.9
+  ────────────────────────────────────────────────────────────────────────
+  问题: format_indent / format_spacing / format_font 三个原生格式预设
+        均报错 "Cannot set properties of undefined (setting 'xxx')"。
+        format_title 因 v1.8 修复已正常工作，但其余三个预设依然失败。
+
+  根因:
+    Office.js context.load(paragraphs, 'items') 的行为:
+      ✓ 加载标量属性: text, alignment, firstLineIndent, spaceBefore,
+                      spaceAfter, lineSpacing, leftIndent, rightIndent,
+                      style, styleBuiltIn
+      ✗ 不加载导航对象: paragraphFormat, font
+
+    旧代码使用了:
+      p.paragraphFormat.firstLineIndent  →  p.paragraphFormat 是 undefined
+      p.paragraphFormat.spaceBefore      →  undefined.spaceBefore → TypeError
+      p.paragraphFormat.spaceAfter       →  undefined.spaceAfter → TypeError
+      p.paragraphFormat.lineSpacing      →  undefined.lineSpacing → TypeError
+      p.paragraphFormat.leftIndent       →  undefined.leftIndent → TypeError
+      p.paragraphFormat.rightIndent      →  undefined.rightIndent → TypeError
+
+    这些属性本身就是 Paragraph 对象的直接标量属性，可以直接读取/设置。
+
+    注: p.font.name 等属性正常工作（Office.js 对 font 对象有特殊内部处理）。
+
+    影响范围:
+      不仅 4 个原生格式预设受影响，一键智能排版（smartFormatDocument）
+      中的 3 个指令执行函数也存在相同问题，但因被 try/catch 包裹
+      而静默失败，用户无感知:
+        - executeSetBody()       → p.paragraphFormat.firstLineIndent
+        - executeSetCodeBlock()  → p.paragraphFormat.leftIndent
+        - executeSetQuote()      → p.paragraphFormat.leftIndent
+
+  修复:
+    将所有 p.paragraphFormat.xxx 改为 p.xxx（共 4 个函数）:
+
+    applyFormatToParagraphs:
+      - p.paragraphFormat 全部移除 → 直接用 p.firstLineIndent 等
+
+    executeSetBody:
+      - p.paragraphFormat.firstLineIndent → p.firstLineIndent
+      - p.paragraphFormat.spaceBefore     → p.spaceBefore
+      - p.paragraphFormat.spaceAfter      → p.spaceAfter
+      - p.paragraphFormat.lineSpacing     → p.lineSpacing
+
+    executeSetCodeBlock:
+      - p.paragraphFormat.firstLineIndent → p.firstLineIndent
+      - p.paragraphFormat.leftIndent      → p.leftIndent
+      - p.paragraphFormat.spaceBefore     → p.spaceBefore
+      - p.paragraphFormat.spaceAfter      → p.spaceAfter
+
+    executeSetQuote:
+      - p.paragraphFormat.leftIndent      → p.leftIndent
+      - p.paragraphFormat.rightIndent     → p.rightIndent
+      - p.paragraphFormat.firstLineIndent → p.firstLineIndent
+
+    验证: grep -n paragraphFormat taskpane.js → 零匹配（全部清除）
+
+  修改文件:
+    taskpane.js  — 4 个函数中移除所有 paragraphFormat 引用
+    taskpane.html — 版本号 v1.8 → v1.9
+    manifest.xml   — 版本号 1.0.0.1 → 1.0.0.2（配合缓存刷新）
+
+================================================================================
