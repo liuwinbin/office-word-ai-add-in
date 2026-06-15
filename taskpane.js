@@ -408,8 +408,8 @@
     '| italic | boolean | 是否斜体 | true, false |\n' +
     '| lineSpacing | number | 行距值 | 22(配合type:"fixed"即固定值22磅), 1.5(配合type:"multiple"即1.5倍行距) |\n' +
     '| lineSpacingType | string | 行距类型 | "fixed"(固定值), "multiple"(多倍行距), "atLeast"(最小值) |\n' +
-    '| spaceBefore | number | 段前间距(磅) | 12(段前12磅), 0(无段前间距) |\n' +
-    '| spaceAfter | number | 段后间距(磅) | 6(段后6磅), 0(无段后间距) |\n' +
+    '| spaceBefore | number | 段前间距(磅) | 12(段前12磅/一行), 0(无段前间距)。用户说"段前X行"时换算为 X×字号，如12pt正文段前0.5行=6pt |\n' +
+    '| spaceAfter | number | 段后间距(磅) | 6(段后6磅/半行), 0(无段后间距)。用户说"段后X行"时换算为 X×字号 |\n' +
     '| alignment | string | 对齐方式 | "left"(左对齐), "center"(居中), "right"(右对齐), "justify"(两端对齐) |\n' +
     '| firstLineIndent | number | 首行缩进(磅) | 24(≈12pt字号×2字符) |\n' +
     '| color | string | 字体颜色 | "#FF0000" 或 "red" |\n\n' +
