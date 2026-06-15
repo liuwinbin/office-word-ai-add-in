@@ -294,14 +294,20 @@
 
   /**
    * 使用正则匹配段落文本的标题级别
+   *
+   * 检测策略（优先级从高到低）：
+   *   1. 显式标题关键词
+   *   2. 编号模式（第X章、一、、1.、1.1、(一)）
+   *   3. 短行启发式：≤25字符且无句末标点 → 可能为标题
+   *
    * @param {string} text - 段落文本（已 trim）
    * @returns {number} 1/2/3 = 标题级别，0 = 非标题（正文）
    */
   function detectHeadingLevel(text) {
     var clean = text.replace(/^\s+/, '').slice(0, 80);
 
-    // Level 1: 第X章/摘要/绪论/引言/前言/结论/参考文献/致谢/附录
-    if (/^(摘要|绪论|引言|前言|结论|参考文献|致谢|附录)[\s:：]*$/.test(clean)) return 1;
+    // Level 1: 显式标题关键词
+    if (/^(摘要|绪论|引言|前言|概述|介绍|背景|总则|目的|范围|定义|总结|结论|参考文献|致谢|附录)[\s:：]*$/.test(clean)) return 1;
     if (/^第[一二三四五六七八九十百千\d]+[章篇部]/.test(clean)) return 1;
 
     // Level 2: 第X节 / 一、二、三 / 1. 2. 数字编号
@@ -312,6 +318,12 @@
     // Level 3: 1.1 / (一) / 小标题
     if (/^\d+\.\d+/.test(clean)) return 3;
     if (/^（[一二三四五六七八九十\d]+）/.test(clean)) return 3;
+
+    // 短行启发式：≤25 字符、无句末标点 → 疑似标题（level 2）
+    if (clean.length <= 25 && !/[。！？；，\.!\?;,]$/.test(clean)) {
+      // 排除明显是正文的短行（含多个句子，或以"的""了""是"结尾）
+      if (!/[的了是]$/.test(clean)) return 2;
+    }
 
     return 0;
   }
@@ -370,7 +382,7 @@
     }).then(function () {
       showStatus(el.mainStatus, 'success', '✓ 「' + label + '」已应用。');
     }).catch(function (err) {
-      console.error('executeNativeFormatPreset error:', err);
+      console.error('executeNativeFormatPreset [' + presetKey + '] error:', err);
       showStatus(el.mainStatus, 'error', '格式应用失败: ' + (err.message || '未知错误'));
     });
   }
@@ -398,45 +410,32 @@
 
       switch (presetKey) {
         case 'format_title':
-          // ★ 标题: 应用 Word 内置 Heading 样式（不是 <b> 标签！）
           if (hl > 0) {
-            try { p.style = 'Heading ' + hl; } catch (e) {}
-            try { p.alignment = 'Centered'; } catch (e) {}
-            try { p.font.bold = true; } catch (e) {}
+            p.style = 'Heading ' + hl;
+            p.font.bold = true;
+            p.alignment = 'Centered';
           }
-          // 正文段落保持原样
           break;
 
         case 'format_indent':
-          // 正文: 首行缩进 2 字符（约 24pt @ 12pt 字号）
           if (hl === 0) {
-            try {
-              p.paragraphFormat.firstLineIndent = opts.fontSize * opts.indentChars;
-            } catch (e) {}
+            p.paragraphFormat.firstLineIndent = opts.fontSize * opts.indentChars;
           }
           break;
 
         case 'format_spacing':
-          // 标题: 段前距 12pt, 段后距 6pt
-          // 正文: 段后距 6pt
-          try {
-            p.paragraphFormat.spaceBefore = (hl >= 1) ? 12 : 0;
-            p.paragraphFormat.spaceAfter = 6;
-          } catch (e) {}
+          p.paragraphFormat.spaceBefore = (hl >= 1) ? 12 : 0;
+          p.paragraphFormat.spaceAfter = 6;
           break;
 
         case 'format_font':
-          // 正文: 12pt 字号, 1.5 倍行距
-          // 标题: 按级别递增 H1=18pt, H2=16pt, H3=14pt
-          try {
-            p.font.name = opts.cnFont;
-            if (hl >= 1) {
-              p.font.size = opts.fontSize + (4 - hl) * 2; // H1=18, H2=16, H3=14
-            } else {
-              p.font.size = opts.fontSize; // 正文 12pt
-              p.paragraphFormat.lineSpacing = opts.fontSize * opts.lineSpacing * 1.2;
-            }
-          } catch (e) {}
+          p.font.name = opts.cnFont;
+          if (hl >= 1) {
+            p.font.size = opts.fontSize + (4 - hl) * 2;
+          } else {
+            p.font.size = opts.fontSize;
+            p.paragraphFormat.lineSpacing = opts.fontSize * opts.lineSpacing * 1.2;
+          }
           break;
       }
     }
