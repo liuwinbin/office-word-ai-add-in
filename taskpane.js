@@ -214,18 +214,30 @@
       var paragraphs = selection.paragraphs;
       context.load(paragraphs, 'items');
       return context.sync().then(function () {
+        var items = paragraphs.items;
+
+        // 统计非空段落数：≤1 个 → 光标定位，不加格式标注，沿用旧纯文本行为
+        var nonEmpty = 0, onlyText = '';
+        for (var i = 0; i < items.length; i++) {
+          var t = (items[i].text || '').trim();
+          if (t.length > 0) { nonEmpty++; onlyText = t; }
+        }
+
+        if (nonEmpty <= 1) {
+          return { plainText: onlyText, styledText: '' };
+        }
+
+        // ≥2 个段落被选中 → 带格式标注
         var plainLines = [];
         var styledLines = [];
-        var items = paragraphs.items;
-        for (var i = 0; i < items.length; i++) {
-          var p = items[i];
+        for (var j = 0; j < items.length; j++) {
+          var p = items[j];
           var text = (p.text || '').trim();
           if (text.length === 0) continue;
 
           var styleName = '';
           try { styleName = p.style || ''; } catch (e) {}
 
-          // 映射样式名到简短标注
           var styleTag = styleName;
           if (/^Heading 1$|^标题 1$/i.test(styleName)) styleTag = '标题 1';
           else if (/^Heading 2$|^标题 2$/i.test(styleName)) styleTag = '标题 2';
