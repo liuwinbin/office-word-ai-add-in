@@ -739,6 +739,166 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
+     插入后样式归一化 — insertHtml 后对段落补设 Word 样式名
+     ═══════════════════════════════════════════════════════════ */
+
+  /**
+   * 中英文样式名双向映射表
+   */
+  var STYLE_NAME_MAP_CN_EN = {
+    'Heading 1': '标题 1', 'Heading 2': '标题 2', 'Heading 3': '标题 3',
+    'Heading 4': '标题 4', 'Heading 5': '标题 5', 'Heading 6': '标题 6',
+    'Normal': '正文',
+    'Caption': '题注',
+    'Title': '标题',
+    'Subtitle': '副标题',
+    'TOC 1': '目录 1', 'TOC 2': '目录 2', 'TOC 3': '目录 3',
+    'List Paragraph': '列表段落',
+    'Table Normal': '普通表格',
+    'Quote': '引文',
+    'Intense Quote': '明显引用',
+    'List Bullet': '要点',
+    'List Number': '编号列表'
+  };
+
+  /**
+   * 根据段落内容和格式，检测应使用的 Word 样式名
+   *
+   * @param {Word.Paragraph} p - 段落对象
+   * @param {string} text - 段落文本
+   * @param {number} index - 在插入块中的位置（0-based）
+   * @param {number} total - 插入块的总段落数
+   * @returns {string} 目标样式名（英文）
+   */
+  function detectTargetStyle(p, text, index, total) {
+    // 读取当前已有样式
+    var currentStyle = '';
+    try { currentStyle = p.style || ''; } catch (e) {}
+
+    // 已是内置标题 → 保持不变
+    if (/^Heading \d$|^标题 \d$/i.test(currentStyle)) return null;
+
+    // 读取格式属性
+    var fontSize = 0, isBold = false, isItalic = false;
+    try { fontSize = p.font.size || 0; } catch (e) {}
+    try { isBold = p.font.bold; } catch (e) {}
+    try { isItalic = p.font.italic; } catch (e) {}
+
+    // --- 题注 (Caption) ---
+    // 短文本、以"图/表/Fig/Table"开头
+    if (text.length < 100 && /^(图|表|Fig|Figure|Table)\s*[\.\d:：]/.test(text)) {
+      return 'Caption';
+    }
+
+    // --- 标题 (Title) ---
+    // 第一个段落、大字加粗
+    if (index === 0 && isBold && fontSize >= 18) {
+      return 'Title';
+    }
+
+    // --- 副标题 (Subtitle) ---
+    // 第二个段落、较大字号
+    if (index === 1 && fontSize >= 14 && fontSize < 18 && total > 1) {
+      return 'Subtitle';
+    }
+
+    // --- 目录 (TOC) ---
+    // 含点划线或页码模式
+    if (/\.{3,}\s*\d+$|……\s*\d+$/.test(text) && fontSize >= 10 && fontSize <= 14) {
+      return 'TOC 1';
+    }
+
+    // --- 引文 (Quote) ---
+    // 斜体、短段落
+    if (isItalic && text.length < 200) {
+      return 'Quote';
+    }
+
+    // --- 列表段落 ---
+    // 项目符号或编号开头
+    if (/^[•\-\*▪▸●○]\s/.test(text) || /^\d+[\.\)、]\s/.test(text)) {
+      return 'List Paragraph';
+    }
+
+    // --- 非标题段落：确认不是 Heading → 设正文 ---
+    if (!/Heading|标题/.test(currentStyle)) {
+      return 'Normal';
+    }
+
+    return null;
+  }
+
+  /**
+   * 设置段落的样式名（兼容中英文 Office）
+   *
+   * @param {Word.Paragraph} p - 段落对象
+   * @param {string} enStyle - 英文样式名
+   */
+  function setParagraphStyle(p, enStyle) {
+    if (!enStyle) return;
+    try {
+      p.style = enStyle;
+    } catch (e1) {
+      var cnStyle = STYLE_NAME_MAP_CN_EN[enStyle] || enStyle;
+      try { p.style = cnStyle; } catch (e2) { /* skip */ }
+    }
+  }
+
+  /**
+   * 对刚插入的段落应用样式归一化
+   *
+   * 原理: insertHtml 会把 <h1>~<h6> 转为标题样式，但 <p> 不会得到"正文"样式。
+   *       此函数遍历最后 N 个非空段落，检测每段内容/格式，补设正确的 Word 样式名。
+   *
+   * @param {number} paraCountBefore - 插入前的段落总数
+   * @returns {Promise<number>} 成功设置样式的段落数
+   */
+  function normalizeInsertedParagraphs(paraCountBefore) {
+    return Word.run(function (context) {
+      var paragraphs = context.document.body.paragraphs;
+      context.load(paragraphs, 'items');
+      return context.sync().then(function () {
+        var items = paragraphs.items;
+        var total = items.length;
+        var startIdx = Math.max(0, paraCountBefore);
+        var applied = 0;
+
+        for (var i = startIdx; i < total; i++) {
+          var p = items[i];
+          var text = '';
+          try { text = (p.text || '').trim(); } catch (e) {}
+          if (text.length === 0) continue;
+
+          var targetStyle = detectTargetStyle(p, text, i - startIdx, total - startIdx);
+          if (targetStyle) {
+            setParagraphStyle(p, targetStyle);
+            applied++;
+          }
+        }
+
+        return context.sync().then(function () {
+          console.log('OfficeAI: normalizeInsertedParagraphs applied=' + applied + ' styles over ' + (total - startIdx) + ' new paragraphs');
+          return applied;
+        });
+      });
+    });
+  }
+
+  /**
+   * 获取当前文档段落总数（插入前快照）
+   * @returns {Promise<number>}
+   */
+  function getParagraphCount() {
+    return Word.run(function (context) {
+      var paragraphs = context.document.body.paragraphs;
+      context.load(paragraphs, 'items');
+      return context.sync().then(function () {
+        return paragraphs.items.length;
+      });
+    }).catch(function () { return 0; });
+  }
+
+  /* ═══════════════════════════════════════════════════════════
      原生格式预设 — 标题检测
      ═══════════════════════════════════════════════════════════ */
 
@@ -1243,12 +1403,14 @@
    *
    * @param {string} text - 段落文本（原始，将截断显示前 20 字）
    */
-  function updateContextIndicator(text) {
+  function updateContextIndicator(text, styleDisplay) {
     if (!text) {
       el.contextBar.classList.remove('visible');
       return;
     }
-    el.contextText.textContent = text.slice(0, 20) + (text.length > 20 ? '...' : '');
+    var display = text.slice(0, 16) + (text.length > 16 ? '...' : '');
+    if (styleDisplay) display = '[' + styleDisplay + '] ' + display;
+    el.contextText.textContent = display;
     el.contextBar.classList.add('visible');
   }
 
@@ -1259,6 +1421,27 @@
     currentCursorContext = null;
     el.contextBar.classList.remove('visible');
     clearStatus(el.chatStatus);
+  }
+
+  /**
+   * 样式名 → 简短中文显示名
+   */
+  function mapStyleToDisplayName(styleName) {
+    if (!styleName) return '';
+    if (/^Heading 1$|^标题 1$/i.test(styleName)) return '标题1';
+    if (/^Heading 2$|^标题 2$/i.test(styleName)) return '标题2';
+    if (/^Heading 3$|^标题 3$/i.test(styleName)) return '标题3';
+    if (/^Heading 4$|^标题 4$/i.test(styleName)) return '标题4';
+    if (/^Heading 5$|^标题 5$/i.test(styleName)) return '标题5';
+    if (/^Heading 6$|^标题 6$/i.test(styleName)) return '标题6';
+    if (/^Normal$|^正文$/i.test(styleName)) return '正文';
+    if (/^Caption$|^题注$/i.test(styleName)) return '题注';
+    if (/^Title$/i.test(styleName) && !/Heading|标题/.test(styleName)) return '文档标题';
+    if (/^Subtitle$|^副标题$/i.test(styleName)) return '副标题';
+    if (/^TOC\s*\d$|^目录\s*\d$/i.test(styleName)) return '目录';
+    if (/^List\s/i.test(styleName) || /列表/i.test(styleName)) return '列表';
+    if (/^Table Normal$|^普通表格$/i.test(styleName)) return '表格';
+    return styleName;
   }
 
   /* ═══════════════════════════════════════════════════════════
@@ -1294,13 +1477,19 @@
           }
           _lastDocumentUrl = doc.url;
 
-          // 获取光标所在段落文本
+          // 获取光标所在段落文本 + 样式名
           var items = paras.items;
           if (!items || items.length === 0) return;
           var text = (items[0].text || '').trim();
           if (text.length === 0) return; // 空白处保留上一次有效上下文
+
+          // 读取段落样式名
+          var styleName = '';
+          try { styleName = items[0].style || ''; } catch (e) {}
+          var displayStyle = mapStyleToDisplayName(styleName);
+
           currentCursorContext = text.slice(0, 500);
-          updateContextIndicator(text);
+          updateContextIndicator(text, displayStyle);
         });
       }).catch(function (err) {
         console.warn('SelectionChanged handler suppressed:', err.message);
@@ -2590,14 +2779,19 @@
     el.insertLastBtn.addEventListener('click', function () {
       if (!_lastAIResponse) return;
 
-      Word.run(function (context) {
-        var selection = context.document.getSelection();
-        selection.insertHtml(_lastAIResponse, Word.InsertLocation.replace);
-        return context.sync();
-      }).then(function () {
-        showStatus(el.chatStatus, 'success', '已插入到文档光标处。');
-      }).catch(function (err) {
-        showStatus(el.chatStatus, 'error', '插入失败: ' + (err.message || '未知错误'));
+      getParagraphCount().then(function (beforeCount) {
+        return Word.run(function (context) {
+          var selection = context.document.getSelection();
+          selection.insertHtml(_lastAIResponse, Word.InsertLocation.replace);
+          return context.sync();
+        }).then(function () {
+          return normalizeInsertedParagraphs(beforeCount);
+        }).then(function (applied) {
+          showStatus(el.chatStatus, 'success',
+            '已插入到文档光标处。' + (applied > 0 ? ' 已为 ' + applied + ' 个段落应用样式。' : ''));
+        }).catch(function (err) {
+          showStatus(el.chatStatus, 'error', '插入失败: ' + (err.message || '未知错误'));
+        });
       });
     });
 
@@ -2608,14 +2802,20 @@
         return;
       }
 
-      Word.run(function (context) {
-        var selection = context.document.getSelection();
-        selection.insertHtml(_lastAIResponse, Word.InsertLocation.replace);
-        return context.sync();
-      }).then(function () {
-        showStatus(el.chatStatus, 'success', '已替换选区。');
-      }).catch(function (err) {
-        showStatus(el.chatStatus, 'error', '替换失败: ' + (err.message || '未知错误'));
+      getParagraphCount().then(function (beforeCount) {
+        return Word.run(function (context) {
+          var selection = context.document.getSelection();
+          selection.insertHtml(_lastAIResponse, Word.InsertLocation.replace);
+          return context.sync();
+        }).then(function () {
+          // 替换时旧段落被删除 → 以插入前段落数为基准
+          return normalizeInsertedParagraphs(Math.max(0, beforeCount - 50));
+        }).then(function (applied) {
+          showStatus(el.chatStatus, 'success',
+            '已替换选区。' + (applied > 0 ? ' 已为 ' + applied + ' 个段落应用样式。' : ''));
+        }).catch(function (err) {
+          showStatus(el.chatStatus, 'error', '替换失败: ' + (err.message || '未知错误'));
+        });
       });
     });
 
@@ -2626,14 +2826,19 @@
         return;
       }
 
-      Word.run(function (context) {
-        var body = context.document.body;
-        body.insertHtml(_lastAIResponse, Word.InsertLocation.end);
-        return context.sync();
-      }).then(function () {
-        showStatus(el.chatStatus, 'success', '已追加到文档末尾。');
-      }).catch(function (err) {
-        showStatus(el.chatStatus, 'error', '追加失败: ' + (err.message || '未知错误'));
+      getParagraphCount().then(function (beforeCount) {
+        return Word.run(function (context) {
+          var body = context.document.body;
+          body.insertHtml(_lastAIResponse, Word.InsertLocation.end);
+          return context.sync();
+        }).then(function () {
+          return normalizeInsertedParagraphs(beforeCount);
+        }).then(function (applied) {
+          showStatus(el.chatStatus, 'success',
+            '已追加到文档末尾。' + (applied > 0 ? ' 已为 ' + applied + ' 个段落应用样式。' : ''));
+        }).catch(function (err) {
+          showStatus(el.chatStatus, 'error', '追加失败: ' + (err.message || '未知错误'));
+        });
       });
     });
 
@@ -2656,7 +2861,7 @@
      ═══════════════════════════════════════════════════════════ */
   Office.onReady(function (info) {
     if (info.host === Office.HostType.Word) {
-      console.log('OfficeAI v2.3: Word host detected');
+      console.log('OfficeAI v2.4: Word host detected');
 
       // 1. 缓存 DOM 引用（必须在 bindEvents 之前）
       cacheDom();
@@ -2682,7 +2887,7 @@
       clearStatus(el.formatStatus);
       clearStatus(el.presetsStatus);
 
-      console.log('OfficeAI v2.2: Initialization complete');
+      console.log('OfficeAI v2.4: Initialization complete');
     } else {
       console.warn('OfficeAI: Unsupported host:', info.host);
     }
