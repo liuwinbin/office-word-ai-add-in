@@ -236,50 +236,209 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
-     排版预设定义 (AI)
+     排版预设定义
      ═══════════════════════════════════════════════════════════ */
-  var PRESET_PROMPTS = {
-    format_title: {
-      label: '标题加粗居中',
-      systemAddon: '你是一位 Word 排版专家。请将文档中的标题识别出来，加粗并居中。正文保持原样。请返回完整的、格式化后的文本。',
-      prompt: '请将以下文本中的标题（如果有）加粗并居中显示，正文保持原样。返回完整的格式化文本：'
-    },
-    format_indent: {
-      label: '正文首行缩进',
-      systemAddon: '你是一位 Word 排版专家。请为正文段落添加首行缩进两字符。',
-      prompt: '请为以下文本的正文段落添加首行缩进两字符的格式。标题和列表项保持不变。返回完整的格式化文本：'
-    },
-    format_spacing: {
-      label: '段落间距调整',
-      systemAddon: '你是一位 Word 排版专家。请调整段落间距使排版美观。',
-      prompt: '请调整以下文本的段落间距，使整体排版更加美观、层次分明。段前距建议0.5行、段后距0.5行，标题上下各增加间距。返回完整的格式化文本：'
-    },
-    format_font: {
-      label: '正文字号行距',
-      systemAddon: '你是一位 Word 排版专家。请统一正文字号和行距。',
-      prompt: '请将以下文本的正文统一为合适的中文字号（小四或12pt），行距1.5倍。标题用三号或16pt字体。返回完整的格式化文本：'
-    },
+
+  /**
+   * 原生格式预设（Office.js 直接操作，不经过 AI）
+   * 映射到 data-preset 属性值
+   */
+  var NATIVE_PRESETS = ['format_title', 'format_indent', 'format_spacing', 'format_font'];
+
+  /**
+   * 预设标签名映射
+   */
+  var PRESET_LABELS = {
+    format_title:      '标题加粗居中',
+    format_indent:     '正文首行缩进',
+    format_spacing:    '段落间距调整',
+    format_font:       '正文字号行距',
+    polish:            '校对润色',
+    translate_cn2en:   '中译英',
+    translate_en2cn:   '英译中',
+    summarize:         '生成摘要'
+  };
+
+  /**
+   * AI 预设（需要 AI 重写文本内容）
+   */
+  var AI_PRESET_PROMPTS = {
     polish: {
       label: '校对润色',
-      systemAddon: '你是一位专业的文字校对与润色专家。请修正语法错误、错别字，优化遣词造句，提升流畅度和逻辑性。不要改变原意。',
-      prompt: '请校对并润色以下文本，修正错别字和语法问题：'
+      systemAddon: '你是一位专业文字校对与润色专家。请修正语法错误、错别字，优化遣词造句，提升流畅度和逻辑性。\n' +
+                   '⚠ 重要：保持原文的段落结构和层级不变，每个段落独立处理，段落之间用空行分隔。不要改变原意。',
+      prompt: '请校对并润色以下文本，修正错别字和语法问题。保持段落结构不变：'
     },
     translate_cn2en: {
       label: '中译英',
-      systemAddon: '你是一位专业的中英翻译专家。请准确、地道地将中文翻译为英文。',
-      prompt: '请将以下中文翻译为英文：'
+      systemAddon: '你是一位专业中英翻译专家。请准确、地道地将中文翻译为英文。\n' +
+                   '⚠ 重要：保持原文的段落结构，每个段落独立翻译，段落之间用空行分隔。',
+      prompt: '请将以下中文翻译为英文，保持段落结构：'
     },
     translate_en2cn: {
       label: '英译中',
-      systemAddon: '你是一位专业的英中翻译专家。请准确、流畅地将英文翻译为中文。',
-      prompt: '请将以下英文翻译为中文：'
+      systemAddon: '你是一位专业英中翻译专家。请准确、流畅地将英文翻译为中文。\n' +
+                   '⚠ 重要：保持原文的段落结构，每个段落独立翻译，段落之间用空行分隔。',
+      prompt: '请将以下英文翻译为中文，保持段落结构：'
     },
     summarize: {
       label: '生成摘要',
-      systemAddon: '你是一位专业的文档摘要专家。请生成简洁但全面的摘要，保留核心观点和关键数据。',
+      systemAddon: '你是一位专业文档摘要专家。请生成简洁但全面的摘要，保留核心观点和关键数据。使用要点列表格式输出。',
       prompt: '请为以下文本生成清晰、条理分明的摘要（使用要点列表）：'
     }
   };
+
+  /* ═══════════════════════════════════════════════════════════
+     原生格式预设 — 标题检测
+     ═══════════════════════════════════════════════════════════ */
+
+  /**
+   * 使用正则匹配段落文本的标题级别
+   * @param {string} text - 段落文本（已 trim）
+   * @returns {number} 1/2/3 = 标题级别，0 = 非标题（正文）
+   */
+  function detectHeadingLevel(text) {
+    var clean = text.replace(/^\s+/, '').slice(0, 80);
+
+    // Level 1: 第X章/摘要/绪论/引言/前言/结论/参考文献/致谢/附录
+    if (/^(摘要|绪论|引言|前言|结论|参考文献|致谢|附录)[\s:：]*$/.test(clean)) return 1;
+    if (/^第[一二三四五六七八九十百千\d]+[章篇部]/.test(clean)) return 1;
+
+    // Level 2: 第X节 / 一、二、三 / 1. 2. 数字编号
+    if (/^第[一二三四五六七八九十百千\d]+节/.test(clean)) return 2;
+    if (/^[一二三四五六七八九十]+[、．.\s]/.test(clean)) return 2;
+    if (/^\d+[\.\、\s)]/.test(clean)) return 2;
+
+    // Level 3: 1.1 / (一) / 小标题
+    if (/^\d+\.\d+/.test(clean)) return 3;
+    if (/^（[一二三四五六七八九十\d]+）/.test(clean)) return 3;
+
+    return 0;
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     原生格式预设 — Office.js 执行引擎
+     ═══════════════════════════════════════════════════════════ */
+
+  /**
+   * 原生格式预设执行器（不经过 AI，直接操作文档）
+   *
+   * 流程：
+   *   1. Word.run → 获取选区段落
+   *   2. 选区为空则回退到全文
+   *   3. 按 presetKey 用 Office.js API 逐段应用格式
+   *   4. context.sync → 显示结果
+   *
+   * @param {string} presetKey - 预设键名（format_title|format_indent|format_spacing|format_font）
+   */
+  function executeNativeFormatPreset(presetKey) {
+    clearStatus(el.mainStatus);
+    var label = PRESET_LABELS[presetKey] || presetKey;
+    showStatus(el.mainStatus, 'info', '正在应用「' + label + '」...');
+
+    var opts = getFormatOptions();
+
+    Word.run(function (context) {
+      var selection = context.document.getSelection();
+      selection.load('paragraphs/items');
+
+      return context.sync().then(function () {
+        var paragraphs = selection.paragraphs.items;
+
+        // 选区无有效内容 → 回退到全文
+        var hasContent = false;
+        if (paragraphs && paragraphs.length > 0) {
+          for (var i = 0; i < paragraphs.length; i++) {
+            if ((paragraphs[i].text || '').trim().length > 0) { hasContent = true; break; }
+          }
+        }
+
+        if (!hasContent) {
+          var body = context.document.body;
+          body.load('paragraphs/items');
+          return context.sync().then(function () {
+            applyFormatToParagraphs(body.paragraphs.items, presetKey, opts);
+            return context.sync();
+          });
+        }
+
+        applyFormatToParagraphs(paragraphs, presetKey, opts);
+        return context.sync();
+      });
+    }).then(function () {
+      showStatus(el.mainStatus, 'success', '✓ 「' + label + '」已应用。');
+    }).catch(function (err) {
+      console.error('executeNativeFormatPreset error:', err);
+      showStatus(el.mainStatus, 'error', '格式应用失败: ' + (err.message || '未知错误'));
+    });
+  }
+
+  /**
+   * 对段落数组应用指定的原生格式
+   *
+   * 格式映射：
+   *   format_title    → 标题: Heading 样式 + 居中 + 加粗
+   *   format_indent   → 正文: 首行缩进 2 字符；标题不变
+   *   format_spacing  → 标题: 段前12pt 段后6pt；正文: 段后6pt
+   *   format_font     → 正文: 12pt/1.5倍行距；标题: H1=18pt H2=16pt H3=14pt
+   *
+   * @param {Array<Word.Paragraph>} paragraphs - Office.js 段落对象数组
+   * @param {string} presetKey - 格式预设键名
+   * @param {object} opts - 排版参数配置
+   */
+  function applyFormatToParagraphs(paragraphs, presetKey, opts) {
+    for (var i = 0; i < paragraphs.length; i++) {
+      var p = paragraphs[i];
+      var text = (p.text || '').trim();
+      if (text.length === 0) continue;
+
+      var hl = detectHeadingLevel(text); // 0=正文, 1/2/3=标题级别
+
+      switch (presetKey) {
+        case 'format_title':
+          // ★ 标题: 应用 Word 内置 Heading 样式（不是 <b> 标签！）
+          if (hl > 0) {
+            try { p.style = 'Heading ' + hl; } catch (e) {}
+            try { p.alignment = 'Centered'; } catch (e) {}
+            try { p.font.bold = true; } catch (e) {}
+          }
+          // 正文段落保持原样
+          break;
+
+        case 'format_indent':
+          // 正文: 首行缩进 2 字符（约 24pt @ 12pt 字号）
+          if (hl === 0) {
+            try {
+              p.paragraphFormat.firstLineIndent = opts.fontSize * opts.indentChars;
+            } catch (e) {}
+          }
+          break;
+
+        case 'format_spacing':
+          // 标题: 段前距 12pt, 段后距 6pt
+          // 正文: 段后距 6pt
+          try {
+            p.paragraphFormat.spaceBefore = (hl >= 1) ? 12 : 0;
+            p.paragraphFormat.spaceAfter = 6;
+          } catch (e) {}
+          break;
+
+        case 'format_font':
+          // 正文: 12pt 字号, 1.5 倍行距
+          // 标题: 按级别递增 H1=18pt, H2=16pt, H3=14pt
+          try {
+            p.font.name = opts.cnFont;
+            if (hl >= 1) {
+              p.font.size = opts.fontSize + (4 - hl) * 2; // H1=18, H2=16, H3=14
+            } else {
+              p.font.size = opts.fontSize; // 正文 12pt
+              p.paragraphFormat.lineSpacing = opts.fontSize * opts.lineSpacing * 1.2;
+            }
+          } catch (e) {}
+          break;
+      }
+    }
+  }
 
   /* ═══════════════════════════════════════════════════════════
      AI 执行核心
@@ -1547,11 +1706,20 @@
       });
     });
 
-    // --- 排版预设按钮 ---
+    // --- 排版预设按钮（原生格式 + AI 分流） ---
     el.presetBtns.forEach(function (btn) {
       btn.addEventListener('click', function () {
         var presetKey = btn.getAttribute('data-preset');
-        var preset = PRESET_PROMPTS[presetKey];
+        if (!presetKey) return;
+
+        // ★ 原生格式预设：直接操作文档，不经过 AI
+        if (NATIVE_PRESETS.indexOf(presetKey) >= 0) {
+          executeNativeFormatPreset(presetKey);
+          return;
+        }
+
+        // AI 预设：需要 AI 重写文本内容
+        var preset = AI_PRESET_PROMPTS[presetKey];
         if (!preset) return;
 
         var text = el.documentText.value.trim();
@@ -1634,7 +1802,7 @@
      ═══════════════════════════════════════════════════════════ */
   Office.onReady(function (info) {
     if (info.host === Office.HostType.Word) {
-      console.log('OfficeAI v1.6: Word host detected');
+      console.log('OfficeAI v1.7: Word host detected');
 
       // 1. 缓存 DOM 引用（必须在 bindEvents 之前）
       cacheDom();
@@ -1659,7 +1827,7 @@
       clearStatus(el.fetchModelsStatus);
       clearStatus(el.formatStatus);
 
-      console.log('OfficeAI v1.6: Initialization complete');
+      console.log('OfficeAI v1.7: Initialization complete');
     } else {
       console.warn('OfficeAI: Unsupported host:', info.host);
     }

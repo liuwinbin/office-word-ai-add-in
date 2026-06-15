@@ -428,3 +428,60 @@
     taskpane.html — 版本号 v1.5 → v1.6
 
 ================================================================================
+
+  [2026-06-15] commit (当前) — 重构排版预设按钮：原生格式 + AI 分流 v1.7
+  ─────────────────────────────────────────────────────────
+  问题: 4 个格式预设按钮（标题加粗居中/首行缩进/段落间距/字号行距）
+        全部走 AI 文本重写 + insertHtml 路径。
+        结果：AI 返回 <b> 标签 → Word 将其视为正文加粗，
+        原有 Heading 样式丢失，标题变为正文格式。
+
+  根因:
+    - format_title 等格式预设不需要修改文本内容，只需修改段落样式
+    - 旧架构: AI 重写 → HTML 标签 → insertHtml（Heading 样式被丢弃）
+    - AI 返回的 <b> + <center> ≠ Word Heading 样式
+
+  解决方案:
+
+    1. 拆分预设为两类:
+       ├─ 原生格式预设（4 个）: format_title / format_indent / format_spacing / format_font
+       │   └─ 直接通过 Office.js API 操作文档 → 不经过 AI
+       └─ AI 内容预设（4 个）: polish / translate_cn2en / translate_en2cn / summarize
+           └─ 保持 AI 文本重写路径
+
+    2. 新增原生执行引擎:
+       - detectHeadingLevel(text) → 正则匹配返回 1/2/3/0（非标题）
+       - executeNativeFormatPreset(presetKey) → Word.run 事务执行
+       - applyFormatToParagraphs(paragraphs, presetKey, opts) → 逐段应用
+       - 选区优先，无选区回退到全文
+
+    3. 格式映射:
+       format_title:
+         - 标题段落 → p.style = "Heading N" + p.alignment = "Centered" + p.font.bold = true
+         - 正文段落 → 保持不变
+       format_indent:
+         - 正文段落 → p.paragraphFormat.firstLineIndent = 24pt（2字符@12pt）
+       format_spacing:
+         - 标题 → spaceBefore=12pt, spaceAfter=6pt
+         - 正文 → spaceBefore=0, spaceAfter=6pt
+       format_font:
+         - 正文 → 12pt + 1.5倍行距
+         - H1→18pt, H2→16pt, H3→14pt
+
+    4. AI 预设 Prompt 优化:
+       - 新增 ⚠ 段落结构保持约束
+       - 强调段落独立处理 + 空行分隔
+
+    5. 删除的代码:
+       - PRESET_PROMPTS 对象 → 拆分为 NATIVE_PRESETS + PRESET_LABELS + AI_PRESET_PROMPTS
+       - 不再将格式预设的 prompt 填入 instructionInput
+
+    6. UI 行为变更:
+       - 原生格式预设: 直接操作文档，无需先"读取全文"
+       - AI 内容预设: 仍需先读取文档或选中文字
+
+  修改文件:
+    taskpane.js  — 新增 ~150 行（3 个函数 + 常量定义）；修改预设事件绑定
+    taskpane.html — 版本号 v1.6 → v1.7
+
+================================================================================
