@@ -408,6 +408,8 @@
     '| italic | boolean | 是否斜体 | true, false |\n' +
     '| lineSpacing | number | 行距值 | 22(配合type:"fixed"即固定值22磅), 1.5(配合type:"multiple"即1.5倍行距) |\n' +
     '| lineSpacingType | string | 行距类型 | "fixed"(固定值), "multiple"(多倍行距), "atLeast"(最小值) |\n' +
+    '| spaceBefore | number | 段前间距(磅) | 12(段前12磅), 0(无段前间距) |\n' +
+    '| spaceAfter | number | 段后间距(磅) | 6(段后6磅), 0(无段后间距) |\n' +
     '| alignment | string | 对齐方式 | "left"(左对齐), "center"(居中), "right"(右对齐), "justify"(两端对齐) |\n' +
     '| firstLineIndent | number | 首行缩进(磅) | 24(≈12pt字号×2字符) |\n' +
     '| color | string | 字体颜色 | "#FF0000" 或 "red" |\n\n' +
@@ -538,6 +540,12 @@
     if (typeof props.lineSpacing === 'number') {
       p.lineSpacing = props.lineSpacing;
     }
+    if (typeof props.spaceBefore === 'number') {
+      p.spaceBefore = props.spaceBefore;
+    }
+    if (typeof props.spaceAfter === 'number') {
+      p.spaceAfter = props.spaceAfter;
+    }
     if (typeof props.alignment === 'string') {
       var alignMap = {
         'left': 'Left',
@@ -649,6 +657,8 @@
       var unit = (props.lineSpacingType === 'multiple') ? '倍' : 'pt';
       parts.push('行距=' + (lsLabel ? lsLabel : '') + props.lineSpacing + unit);
     }
+    if (typeof props.spaceBefore === 'number') parts.push('段前=' + props.spaceBefore + 'pt');
+    if (typeof props.spaceAfter === 'number') parts.push('段后=' + props.spaceAfter + 'pt');
     if (props.alignment) {
       var alignLabel = { left: '左对齐', center: '居中', right: '右对齐', justify: '两端对齐' };
       parts.push(alignLabel[props.alignment] || props.alignment);
