@@ -322,4 +322,53 @@
     taskpane.js  — 新增 ~350 行原生排版模块
     taskpane.html — 新增排版按钮区 + 进度条 + 设置面板排版参数
 
+  [2026-06-15] commit (当前) — 重构为混合架构智能排版 (v1.5)
+  ─────────────────────────────────────────────────────────
+  需求: 将纯正则排版改为「AI 语义分析 + Office.js 原生执行」
+        混合架构。AI 仅作为文档理解引擎输出 JSON 指令，
+        严禁 AI 直接重写全文文本。
+
+  架构变更 (v1.4 → v1.5):
+    旧: 正则匹配标题 → 逐段落套用格式
+    新: AI 分析语义 → JSON 指令数组 → Office.js 逐条执行
+
+    Phase 1 — AI 语义分析（仅一次 API 调用）:
+      - 输入: 段落文本数组 [{"index":0,"text":"第1章 概述"}, ...]
+      - System Prompt: 定义 6 种操作 + Schema 规则
+      - 输出: JSON 指令数组 [{"index":0,"action":"setHeading","level":1}, ...]
+      - temperature=0.1 确保输出稳定
+      - 三层 JSON 解析容错: 直接 parse → ```json 提取 → 最长[...]
+
+    Phase 2 — Office.js 原生执行（分批）:
+      指令类型映射:
+        setHeading  → paragraph.style = "Heading 1/2/3"
+        setBody     → font/size/indent/spacing → Office.js API
+        addSpaceBetweenCnEn → addCnEnSpacingToText() → insertText
+        setCodeBlock→ Consolas 10.5pt + 左缩进
+        setList     → startNewBullet() / startNewNumberedList()
+        setQuote    → italic + 左右缩进 + 灰色
+
+    Phase 3 — 收尾:
+      removeEmptyLines() → 清除连续空行 → Toast 统计
+
+  回退机制:
+    AI 失败/返回非法 JSON → generateFallbackInstructions()
+    → 自动降级为纯正则匹配，确保即使离线也能基本排版
+
+  删除的代码: HEADING_PATTERNS, matchHeading(), detectAndStyleHeadings(),
+             processCnEnSpacing(), autoFormatDocument(), processBatch(),
+             finalizeFormat() — 合计约 180 行
+
+  新增的代码: SMART_FORMAT_SYSTEM_PROMPT, callAIForAnalysis(),
+             parseAIResponse(), buildSmartFormatPrompt(),
+             executeSetHeading/SetBody/AddCnEnSpacing/SetCodeBlock/
+             SetList/SetQuote, executeInstructions(),
+             smartFormatDocument(), executeBatches(),
+             generateFallbackInstructions(), finalizeSmartFormat()
+             — 合计约 280 行
+
+  修改文件:
+    taskpane.js  — 完全重写排版模块为混合架构
+    taskpane.html — 按钮文案更新为「一键智能排版」
+
 ================================================================================
