@@ -340,10 +340,12 @@
 
     Word.run(function (context) {
       var selection = context.document.getSelection();
-      selection.load('paragraphs/items');
+      var selParagraphs = selection.paragraphs;
+      // ★ 必须显式加载 text 属性，否则 Office.js 报错
+      selParagraphs.load('items/text');
 
       return context.sync().then(function () {
-        var paragraphs = selection.paragraphs.items;
+        var paragraphs = selParagraphs.items;
 
         // 选区无有效内容 → 回退到全文
         var hasContent = false;
@@ -354,10 +356,10 @@
         }
 
         if (!hasContent) {
-          var body = context.document.body;
-          body.load('paragraphs/items');
+          var bodyParagraphs = context.document.body.paragraphs;
+          bodyParagraphs.load('items/text');
           return context.sync().then(function () {
-            applyFormatToParagraphs(body.paragraphs.items, presetKey, opts);
+            applyFormatToParagraphs(bodyParagraphs.items, presetKey, opts);
             return context.sync();
           });
         }
