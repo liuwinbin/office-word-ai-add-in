@@ -446,35 +446,28 @@
      ═══════════════════════════════════════════════════════════ */
 
   /**
-   * AI 语义分析 System Prompt
-   * AI 仅作为"文档结构理解引擎"，输出结构化 JSON 指令，绝不修改原文。
+   * AI 语义分析 System Prompt（精简版）
+   *
+   * 设计原则：
+   *   - 最小化 token 消耗（~350 tokens vs 旧版 ~600 tokens）
+   *   - 6 种操作覆盖全部排版场景
+   *   - 明确禁止 markdown 包裹，强制纯 JSON 输出
+   *   - 列表项/标题不与 setBody 重复标记
    */
   var SMART_FORMAT_SYSTEM_PROMPT =
-    '你是文档结构分析引擎。你只分析文档的语义结构，不修改任何文本内容。\n\n' +
-    '## 你的任务\n' +
-    '分析以下段落数组，为每个段落生成一条排版指令。输出严格的 JSON 数组。\n\n' +
-    '## 输出 JSON Schema\n' +
-    '[{"index": 段落索引, "action": "操作名", ...额外参数}]\n\n' +
-    '## 可用操作\n' +
-    '1. setHeading — 语义标题（章/节/编号/摘要/引言/结论/参考文献/致谢/附录等）\n' +
-    '   参数: "level": 1|2|3\n' +
-    '   - level 1: 主标题（第X章、第X部分、摘要、绪论、结论、参考文献、致谢）\n' +
-    '   - level 2: 次级标题（第X节、一、二、1. 数字编号）\n' +
-    '   - level 3: 三级标题（1.1、(一)、小标题）\n' +
-    '2. setBody — 普通正文段落\n' +
-    '3. addSpaceBetweenCnEn — 段落中同时包含中文和英文/数字（需要加空格）\n' +
-    '4. setCodeBlock — 代码块（等宽字体特征、缩进4空格、含代码关键词）\n' +
-    '5. setList — 列表项\n' +
-    '   参数: "type": "bullet"|"number"\n' +
-    '6. setQuote — 引用块（引文、注释、说明性文字）\n\n' +
-    '## 关键规则\n' +
-    '- 每个非空段落必须恰好有一条指令\n' +
-    '- 空段落（纯空白/零长度）跳过，不输出指令\n' +
-    '- 中英文/数字混排的正文段落：优先标记 addSpaceBetweenCnEn\n' +
-    '- 有中英文间距问题的标题：标记 addSpaceBetweenCnEn\n' +
-    '- 标题不应同时标记为 setBody\n' +
-    '- 列表项不标记为 setBody\n' +
-    '- 输出必须是纯 JSON 数组，不要用 ```json 包裹，不要加任何解释文字';
+    '你是文档结构分析引擎。分析段落数组，输出 JSON 排版指令。\n\n' +
+    '## 指令类型\n' +
+    '- setHeading: 标题。level:1(第X章/摘要/绪论/结论/参考文献/致谢) 2(第X节/一、/1.) 3(1.1/(一)/小节)\n' +
+    '- setBody: 普通正文段落\n' +
+    '- addSpaceBetweenCnEn: 同时包含中文和英文/数字（需加空格，可独立或与 setBody 合并）\n' +
+    '- setCodeBlock: 代码块（等宽字体/缩进/含关键词如 function var class def import）\n' +
+    '- setList: 列表项。type:"bullet"|"number"\n' +
+    '- setQuote: 引用/注释性文字\n\n' +
+    '## 规则\n' +
+    '1. 每个非空段落恰好 1 条指令，空段落跳过\n' +
+    '2. 标题不标记为 setBody；列表项不标记为 setBody\n' +
+    '3. 中英文/数字混排优先标记 addSpaceBetweenCnEn\n' +
+    '4. 纯输出 JSON 数组，不加解释和 markdown 包裹';
 
   /* ═══════════════════════════════════════════════════════════
      智能排版模块 — CJK 间距处理（保留核心算法）
@@ -567,18 +560,29 @@
   }
 
   /**
-   * 调用 AI 进行文档结构分析
-   * @param {Array<{index: number, text: string}>} paragraphTexts
-   * @returns {Promise<Array|null>} 指令数组，失败返回 null
+   * Promise 超时包装
+   * @param {Promise} promise - 原始 promise
+   * @param {number} ms - 超时毫秒
+   * @returns {Promise}
    */
-  function callAIForAnalysis(paragraphTexts) {
-    var cfg = getConfigFromUI();
+  function withTimeout(promise, ms) {
+    return Promise.race([
+      promise,
+      new Promise(function (_, reject) {
+        setTimeout(function () {
+          reject(new Error('请求超时（' + (ms / 1000).toFixed(0) + ' 秒）'));
+        }, ms);
+      })
+    ]);
+  }
 
-    if (cfg.provider !== 'ollama' && !cfg.apiKey) {
-      showStatus(el.formatStatus, 'error', '请先在设置中配置 API Key。');
-      return Promise.resolve(null);
-    }
-
+  /**
+   * 单批 AI 分析调用
+   * @param {Array<{index: number, text: string}>} paragraphTexts - 段落文本（已截断 120 字符）
+   * @param {object} cfg - 当前配置
+   * @returns {Promise<Array|null>} 指令数组
+   */
+  function callAIForBatch(paragraphTexts, cfg) {
     var prompt = buildSmartFormatPrompt(paragraphTexts);
     var messages = [
       { role: 'system', content: SMART_FORMAT_SYSTEM_PROMPT },
@@ -640,18 +644,114 @@
       });
     }
 
-    return fetchPromise.then(function (rawText) {
-      console.log('AI raw response length:', rawText.length);
+    return withTimeout(fetchPromise, AI_TIMEOUT_MS).then(function (rawText) {
+      console.log('AI batch response length:', rawText.length);
       var instructions = parseAIResponse(rawText);
       if (!instructions || !Array.isArray(instructions) || instructions.length === 0) {
-        console.warn('AI returned unparseable response, will use fallback');
+        console.warn('AI batch returned unparseable response');
         return null;
       }
       return instructions;
     }).catch(function (err) {
-      console.error('AI analysis failed:', err);
-      return null;
+      console.error('AI batch failed:', err);
+      return null; // 单批失败不终止，由上层合并处理
     });
+  }
+
+  /**
+   * 合并多个批次的指令数组，后批覆盖前批同索引冲突
+   * @param {Array<Array<object>>} instructionArrays - 多批指令数组
+   * @returns {Array<object>} 合并后按 index 排序的指令数组
+   */
+  function mergeInstructions(instructionArrays) {
+    var merged = {};
+    for (var i = 0; i < instructionArrays.length; i++) {
+      var batch = instructionArrays[i];
+      if (!batch || !Array.isArray(batch)) continue;
+      for (var j = 0; j < batch.length; j++) {
+        var instr = batch[j];
+        if (instr && typeof instr.index === 'number' && instr.action) {
+          merged[instr.index] = instr; // 后批覆盖前批
+        }
+      }
+    }
+    var result = [];
+    var keys = Object.keys(merged);
+    for (var k = 0; k < keys.length; k++) {
+      result.push(merged[keys[k]]);
+    }
+    result.sort(function (a, b) { return a.index - b.index; });
+    return result;
+  }
+
+  /**
+   * 调用 AI 进行文档结构分析（支持大文档分批）
+   *
+   * 策略：
+   *   - ≤ AI_BATCH_SIZE 段：单次调用
+   *   - > AI_BATCH_SIZE 段：顺序分批发送，每批返回的指令按 index 合并
+   *
+   * @param {Array<{index: number, text: string}>} paragraphTexts - 已截断的段落文本数组
+   * @returns {Promise<Array|null>} 合并后的指令数组，全部失败返回 null
+   */
+  function callAIForAnalysis(paragraphTexts) {
+    var cfg = getConfigFromUI();
+
+    if (cfg.provider !== 'ollama' && !cfg.apiKey) {
+      showStatus(el.formatStatus, 'error', '请先在设置中配置 API Key。');
+      return Promise.resolve(null);
+    }
+
+    // 小文档：单次调用
+    if (paragraphTexts.length <= AI_BATCH_SIZE) {
+      return callAIForBatch(paragraphTexts, cfg);
+    }
+
+    // 大文档：分批发送，顺序执行（避免并发限流）
+    var allResults = [];
+    var batchCount = Math.ceil(paragraphTexts.length / AI_BATCH_SIZE);
+    var failCount = 0;
+
+    showStatus(el.formatStatus, 'info',
+      'AI 分 ' + batchCount + ' 批分析中 (1/' + batchCount + ')...');
+
+    /**
+     * 递归处理单批
+     * @param {number} idx - 当前批次索引（0-based）
+     * @returns {Promise<Array|null>}
+     */
+    function processBatch(idx) {
+      if (idx >= batchCount) {
+        // 全部完成
+        if (allResults.length === 0) {
+          showStatus(el.formatStatus, 'warn', '所有 AI 批次均失败，将使用规则引擎回退。');
+          return Promise.resolve(null);
+        }
+        var merged = mergeInstructions(allResults);
+        showStatus(el.formatStatus, 'info',
+          'AI 分析完成：' + batchCount + ' 批共生成 ' + merged.length + ' 条指令');
+        return Promise.resolve(merged);
+      }
+
+      var start = idx * AI_BATCH_SIZE;
+      var end = Math.min(start + AI_BATCH_SIZE, paragraphTexts.length);
+      var batch = paragraphTexts.slice(start, end);
+
+      return callAIForBatch(batch, cfg).then(function (instructions) {
+        if (instructions && instructions.length > 0) {
+          allResults.push(instructions);
+        } else {
+          failCount++;
+        }
+        if (idx + 1 < batchCount) {
+          showStatus(el.formatStatus, 'info',
+            'AI 分 ' + batchCount + ' 批分析中 (' + (idx + 2) + '/' + batchCount + ')...');
+        }
+        return processBatch(idx + 1);
+      });
+    }
+
+    return processBatch(0);
   }
 
   /* ═══════════════════════════════════════════════════════════
@@ -897,14 +997,22 @@
      智能排版模块 — 主编排器（混合架构：AI 分析 + Office.js 执行）
      ═══════════════════════════════════════════════════════════ */
 
-  var BATCH_SIZE = 80;
+  var BATCH_SIZE      = 80;    // 进度条更新单位（段/步）
+  var AI_BATCH_SIZE   = 150;   // AI 分析每批段落数
+  var AI_TIMEOUT_MS   = 30000; // AI 调用超时（毫秒）
 
   /**
-   * 一键智能排版：
-   *   Phase 0: 加载段落，检查文档保护
-   *   Phase 1: AI 语义分析 → 输出 JSON 指令数组
-   *   Phase 2: Office.js 原生执行指令（分批 + 进度条）
-   *   Phase 3: 清除连续空行 → 显示统计
+   * 一键智能排版 — 主编排器（v1.6 混合架构）
+   *
+   * 三阶段流水线：
+   *   Phase 0: Word.run 加载段落 → 检查保护 → 提取文本数组
+   *   Phase 1: AI 语义分析（自动分批）→ JSON 指令数组
+   *   Phase 2: 单 Word.run 事务执行全部指令 + 清除空行 → 一次 sync
+   *
+   * 关键改进（v1.5 → v1.6）：
+   *   - Phase 2 合并为单个 Word.run + 单次 context.sync → Ctrl+Z 一键撤销全部排版
+   *   - AI 分析支持 >150 段自动分批，不再截断大文档
+   *   - 每批 AI 调用含 30s 超时保护
    */
   function smartFormatDocument() {
     clearStatus(el.formatStatus);
@@ -916,7 +1024,7 @@
     setSpinner(el.autoFormatSpinner, true);
     showStatus(el.formatStatus, 'info', '正在加载文档...');
 
-    // Phase 0: 加载段落 + 检查保护
+    /* ═══ Phase 0: 加载段落 + 提取文本 ═══ */
     Word.run(function (context) {
       var body = context.document.body;
       var paragraphs = body.paragraphs;
@@ -928,49 +1036,76 @@
 
         if (total === 0) {
           showStatus(el.formatStatus, 'info', '文档无内容，无需排版。');
-          return;
+          return null;
         }
 
         return checkDocumentProtection(context).then(function (protResult) {
           if (protResult.protected) {
             showStatus(el.formatStatus, 'error', protResult.reason);
-            return;
+            return null;
           }
 
-          var stats = createStats();
-          stats.total = total;
-
-          // 提取段落文本用于 AI 分析（最多取前120字符、最多200段避免 token 爆炸）
-          var MAX_AI_PARAGRAPHS = 200;
+          // 提取段落文本：保留原始 index，截断 120 字符控制 token 消耗
           var paragraphTexts = [];
-          var limit = Math.min(total, MAX_AI_PARAGRAPHS);
-          for (var i = 0; i < limit; i++) {
+          for (var i = 0; i < total; i++) {
             var t = (items[i].text || '').trim();
             if (t.length > 0) {
               paragraphTexts.push({ index: i, text: t.slice(0, 120) });
             }
           }
 
-          showStatus(el.formatStatus, 'info', '文档共 ' + total + ' 段' +
-            (total > MAX_AI_PARAGRAPHS ? ' (前' + MAX_AI_PARAGRAPHS + '段用于AI分析)' : '') +
-            '，AI 正在分析结构...');
-          updateFormatProgress(stats, 0, total, 'AI 分析中...');
+          return { total: total, paragraphTexts: paragraphTexts };
+        });
+      });
+    }).then(function (paraData) {
+      if (!paraData) return; // 空文档或受保护文档
 
-          // Phase 1: AI 语义分析
-          return callAIForAnalysis(paragraphTexts).then(function (instructions) {
-            if (!instructions || instructions.length === 0) {
-              showStatus(el.formatStatus, 'warn',
-                'AI 分析失败，使用规则引擎回退。将基于正则匹配执行基本排版...');
-              instructions = generateFallbackInstructions(items, total);
+      var total = paraData.total;
+      var paragraphTexts = paraData.paragraphTexts;
+
+      var stats = createStats();
+      stats.total = total;
+
+      updateFormatProgress(stats, 0, total, 'AI 分析中...');
+      showStatus(el.formatStatus, 'info', '文档共 ' + total + ' 段，AI 正在分析结构...');
+
+      /* ═══ Phase 1: AI 语义分析（自动分批） ═══ */
+      return callAIForAnalysis(paragraphTexts).then(function (instructions) {
+        if (!instructions || instructions.length === 0) {
+          showStatus(el.formatStatus, 'warn',
+            'AI 分析失败，使用规则引擎回退。将基于正则匹配执行基本排版...');
+          instructions = generateFallbackInstructions(paragraphTexts);
+        } else {
+          showStatus(el.formatStatus, 'info',
+            'AI 已生成 ' + instructions.length + ' 条指令，单事务原生执行中...');
+        }
+
+        updateFormatProgress(stats, 0, total, '原生执行中...');
+
+        /* ═══ Phase 2: 单 Word.run 事务 — 全部指令 + 清除空行 → 一次 sync ═══ */
+        return Word.run(function (context) {
+          var body = context.document.body;
+          var paragraphs = body.paragraphs;
+          context.load(paragraphs, 'items');
+
+          return context.sync().then(function () {
+            var items = paragraphs.items;
+
+            // 复用指令执行引擎（全量处理：batchStart=0, batchEnd=items.length）
+            executeInstructions(context, items, instructions, 0, items.length, stats, opts);
+
+            // 清除连续空行
+            if (opts.removeEmptyLines) {
+              removeEmptyLines(context, paragraphs, stats);
             }
 
-            showStatus(el.formatStatus, 'info',
-              'AI 已生成 ' + instructions.length + ' 条排版指令，正在原生执行...');
+            updateFormatProgress(stats, total, total, '同步中...');
 
-            // Phase 2: 分批执行
-            var batchCount = Math.ceil(total / BATCH_SIZE);
-            return executeBatches(0, batchCount, total, instructions, stats, opts);
+            // ★ 单次 sync：整个排版 = 一个撤销单元
+            return context.sync();
           });
+        }).then(function () {
+          finalizeSmartFormat(stats, opts);
         });
       });
     }).catch(function (err) {
@@ -983,81 +1118,104 @@
   }
 
   /**
-   * 递归分批执行排版指令
+   * AI 失败回退方案：基于正则规则从文本生成排版指令
+   *
+   * 新增识别能力（v1.6）：
+   *   - 代码块：等宽字体特征、缩进 ≥4 空格、含代码关键词
+   *   - 列表：项目符号（• - *）或编号（1. 2.）
+   *   - 引用：以 ">" 开头或引号包裹的短段落
+   *   - 中英文混排：自动标记 addSpaceBetweenCnEn
+   *
+   * @param {Array<{index: number, text: string}>} paragraphTexts - 文本数组
+   * @returns {Array<object>} 排版指令数组
    */
-  function executeBatches(batchIndex, batchCount, total, instructions, stats, opts) {
-    if (batchIndex >= batchCount) {
-      return finalizeSmartFormat(stats, opts);
-    }
-
-    var start = batchIndex * BATCH_SIZE;
-    var end = Math.min(start + BATCH_SIZE, total);
-
-    return Word.run(function (context) {
-      var body = context.document.body;
-      var paragraphs = body.paragraphs;
-      context.load(paragraphs, 'items');
-
-      return context.sync().then(function () {
-        var allItems = paragraphs.items;
-
-        // 执行指令
-        executeInstructions(context, allItems, instructions, start, end, stats, opts);
-
-        // 清除空行（在每批中执行，确保增量清理）
-        if (opts.removeEmptyLines) {
-          removeEmptyLines(context, paragraphs, stats);
-        }
-
-        return context.sync();
-      });
-    }).then(function () {
-      updateFormatProgress(stats, end, total, '执行中...');
-
-      return executeBatches(batchIndex + 1, batchCount, total, instructions, stats, opts);
-    }).catch(function (err) {
-      console.error('Batch ' + batchIndex + ' error:', err);
-      showStatus(el.formatStatus, 'warn',
-        '第 ' + (batchIndex + 1) + ' 批出错: ' + (err.message || '未知') + '，继续...');
-      return executeBatches(batchIndex + 1, batchCount, total, instructions, stats, opts);
-    });
-  }
-
-  /**
-   * AI 失败时的回退方案：基于简单正则规则生成指令
-   */
-  function generateFallbackInstructions(items, total) {
+  function generateFallbackInstructions(paragraphTexts) {
     var instructions = [];
-    var HEADING_RE = [
-      { regex: /^第[一二三四五六七八九十百千\d]+[章篇部]/, level: 1 },
-      { regex: /^第[一二三四五六七八九十百千\d]+节/, level: 2 },
-      { regex: /^[一二三四五六七八九十]+[、．.]/, level: 2 },
-      { regex: /^\d+[\.\、]/, level: 2 },
-      { regex: /^\d+\.\d+/, level: 3 },
-      { regex: /^（[一二三四五六七八九十\d]+）/, level: 3 }
+
+    // 标题正则（优先级从高到低匹配）
+    var HEADING_RULES = [
+      { regex: /^(摘要|绪论|引言|前言|结论|参考文献|致谢|附录)[\s:：]*$/,  level: 1 },
+      { regex: /^第[一二三四五六七八九十百千\d]+[章篇部]/,              level: 1 },
+      { regex: /^第[一二三四五六七八九十百千\d]+节/,                    level: 2 },
+      { regex: /^[一二三四五六七八九十]+[、．.\s]/,                     level: 2 },
+      { regex: /^\d+[\.\、\s)]/,                                         level: 2 },
+      { regex: /^\d+\.\d+[\s\.\、)]/,                                    level: 3 },
+      { regex: /^（[一二三四五六七八九十\d]+）/,                        level: 3 }
     ];
 
-    for (var i = 0; i < total; i++) {
-      var text = (items[i].text || '').trim();
+    // 代码块特征：等宽字体常见关键词 + 缩进特征
+    var CODE_KEYWORDS = /\b(function|var |let |const |class |def |import |from |return |if |for |while |public |private |static |void |int |string |console\.|System\.|#include|#define)\b/;
+    var CODE_INDENT_RE = /^(    |\t)/; // 4空格缩进或 Tab
+
+    // 列表特征
+    var BULLET_RE = /^[•\-\*▪▸●○]\s/;
+    var NUMBER_RE = /^\d+[\.\)、]\s/;
+
+    // 引用特征
+    var QUOTE_RE = /^[>」」"'"『"].*[」"'"』"]$/;
+
+    for (var i = 0; i < paragraphTexts.length; i++) {
+      var item = paragraphTexts[i];
+      var text = item.text;
       if (text.length === 0) continue;
 
+      var cleanText = text.replace(/^\s+/, '').slice(0, 80);
+
+      // 1. 标题检测
       var isHeading = false;
-      for (var j = 0; j < HEADING_RE.length; j++) {
-        if (HEADING_RE[j].regex.test(text.replace(/^\s+/, '').slice(0, 60))) {
-          instructions.push({ index: i, action: 'setHeading', level: HEADING_RE[j].level });
+      for (var j = 0; j < HEADING_RULES.length; j++) {
+        if (HEADING_RULES[j].regex.test(cleanText)) {
+          instructions.push({ index: item.index, action: 'setHeading', level: HEADING_RULES[j].level });
           isHeading = true;
           break;
         }
       }
-      if (!isHeading) {
-        instructions.push({ index: i, action: 'setBody' });
+      if (isHeading) continue;
+
+      // 2. 代码块检测
+      if (CODE_INDENT_RE.test(text) || CODE_KEYWORDS.test(text.slice(0, 120))) {
+        instructions.push({ index: item.index, action: 'setCodeBlock' });
+        continue;
       }
+
+      // 3. 列表检测
+      if (BULLET_RE.test(cleanText)) {
+        instructions.push({ index: item.index, action: 'setList', type: 'bullet' });
+        continue;
+      }
+      if (NUMBER_RE.test(cleanText) && cleanText.length < 60) {
+        instructions.push({ index: item.index, action: 'setList', type: 'number' });
+        continue;
+      }
+
+      // 4. 引用检测
+      if (QUOTE_RE.test(cleanText) && cleanText.length < 100) {
+        instructions.push({ index: item.index, action: 'setQuote' });
+        continue;
+      }
+
+      // 5. 中英文混排检测
+      var hasCJK = CJK_RE.test(text);
+      var hasLatin = /[a-zA-Z0-9]/.test(text);
+      if (hasCJK && hasLatin) {
+        instructions.push({ index: item.index, action: 'addSpaceBetweenCnEn' });
+      }
+
+      // 6. 默认正文
+      instructions.push({ index: item.index, action: 'setBody' });
     }
+
     return instructions;
   }
 
   /**
-   * 排版完成后的收尾工作
+   * 排版完成后的统计与反馈
+   *
+   * 展示 Toast 含：标题/正文/中英文间距/代码块/列表/引用/空行的修改计数。
+   * 600ms 后自动隐藏进度条。
+   *
+   * @param {object} stats - 修改统计 {headings, body, cjkSpacing, codeBlock, list, quote, empties, total}
+   * @param {object} opts - 排版参数
    */
   function finalizeSmartFormat(stats, opts) {
     setTimeout(function () {
@@ -1066,13 +1224,13 @@
     }, 600);
 
     var parts = [];
-    if (stats.headings > 0) parts.push('标题 ' + stats.headings + ' 处');
-    if (stats.body > 0) parts.push('正文 ' + stats.body + ' 段');
+    if (stats.headings > 0)   parts.push('标题 ' + stats.headings + ' 处');
+    if (stats.body > 0)       parts.push('正文 ' + stats.body + ' 段');
     if (stats.cjkSpacing > 0) parts.push('中英文间距 ' + stats.cjkSpacing + ' 处');
-    if (stats.codeBlock > 0) parts.push('代码块 ' + stats.codeBlock + ' 处');
-    if (stats.list > 0) parts.push('列表 ' + stats.list + ' 项');
-    if (stats.quote > 0) parts.push('引用 ' + stats.quote + ' 处');
-    if (stats.empties > 0) parts.push('清除空行 ' + stats.empties + ' 行');
+    if (stats.codeBlock > 0)  parts.push('代码块 ' + stats.codeBlock + ' 处');
+    if (stats.list > 0)       parts.push('列表 ' + stats.list + ' 项');
+    if (stats.quote > 0)      parts.push('引用 ' + stats.quote + ' 处');
+    if (stats.empties > 0)    parts.push('清除空行 ' + stats.empties + ' 行');
 
     var msg;
     if (parts.length > 0) {
@@ -1476,7 +1634,7 @@
      ═══════════════════════════════════════════════════════════ */
   Office.onReady(function (info) {
     if (info.host === Office.HostType.Word) {
-      console.log('OfficeAI v1.5: Word host detected');
+      console.log('OfficeAI v1.6: Word host detected');
 
       // 1. 缓存 DOM 引用（必须在 bindEvents 之前）
       cacheDom();
@@ -1501,7 +1659,7 @@
       clearStatus(el.fetchModelsStatus);
       clearStatus(el.formatStatus);
 
-      console.log('OfficeAI v1.5: Initialization complete');
+      console.log('OfficeAI v1.6: Initialization complete');
     } else {
       console.warn('OfficeAI: Unsupported host:', info.host);
     }

@@ -372,3 +372,59 @@
     taskpane.html — 按钮文案更新为「一键智能排版」
 
 ================================================================================
+
+  [2026-06-15] commit (当前) — 重构为单事务混合架构 v1.6
+  ─────────────────────────────────────────────────────────
+  需求: 完善「AI 语义标注 + Office.js 原生执行」混合架构，
+        核心目标：Phase 2 合并为单 Word.run 事务 → Ctrl+Z 一键撤销全部排版。
+
+  架构变更 (v1.5 → v1.6):
+
+    v1.5 问题诊断:
+      1. ❌ executeBatches() 每批一个独立 Word.run → Ctrl+Z 只能撤销最后一批
+      2. ❌ AI 分析硬截断 MAX_AI_PARAGRAPHS=200 → 大文档后半部分无指令
+      3. ⚠️ SMART_FORMAT_SYSTEM_PROMPT ~600 tokens → token 消耗偏高
+      4. ⚠️ 无 AI 调用超时保护 → 网络故障时无限等待
+      5. ⚠️ generateFallbackInstructions 仅识别标题+正文 → 缺少代码块/列表/引用
+
+    v1.6 解决方案:
+
+    1. 单事务执行（核心变更）:
+       旧: Phase 2 = executeBatches() 递归 → N 个 Word.run → N 个 context.sync
+       新: Phase 2 = 单 Word.run → 加载全部段落 → applyAll → 清除空行 → 一次 sync
+       效果: Ctrl+Z 一键撤销全部排版操作
+
+    2. AI 分批分析:
+       - 新增 AI_BATCH_SIZE = 150 段/批
+       - ≤150 段: callAIForBatch 单次调用
+       - >150 段: 顺序分批 → mergeInstructions 合并
+       - 每批含 withTimeout 30s 超时保护
+       - 不再截断大文档，全部分析覆盖
+
+    3. AI Prompt 精简（~40% token 节省）:
+       - 旧版 ~25 行 / ~600 tokens → 新版 ~15 行 / ~350 tokens
+       - 保留 6 种操作定义 + 4 条规则
+       - 去除冗余说明和重复约束
+
+    4. 回退方案增强:
+       generateFallbackInstructions 新增识别:
+         - 代码块: CODE_INDENT_RE + CODE_KEYWORDS 双重检测
+         - 列表: BULLET_RE(• - *) + NUMBER_RE(1. 2.)
+         - 引用: QUOTE_RE 引号包裹 + 短段落
+         - 中英文混排: CJK_RE + hasLatin → addSpaceBetweenCnEn
+       - 接受 paragraphTexts 格式（{index, text}）而非 Office.js 对象
+
+    5. 新增基础设施:
+       - withTimeout(promise, ms): Promise.race 超时包装
+       - callAIForBatch(paragraphTexts, cfg): 单批 AI 调用（含超时 + 解析）
+       - mergeInstructions(instructionArrays): 多批指令按 index 合并去重
+
+    6. 删除的代码:
+       - executeBatches(): 递归分批执行（~35 行）→ 替换为单事务内联
+       - MAX_AI_PARAGRAPHS 常量 → 替换为 AI_BATCH_SIZE
+
+  修改文件:
+    taskpane.js  — 重写排版模块（~250 行变更）
+    taskpane.html — 版本号 v1.5 → v1.6
+
+================================================================================
