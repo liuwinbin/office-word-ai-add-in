@@ -724,3 +724,103 @@
     manifest.xml  — 版本号 1.0.0.4 → 1.0.0.5，cache-busting v=2.0 → v=2.1
 
 ================================================================================
+
+
+
+================================================================================
+
+  [2026-06-15] commit f70fb72 — 基于自然语言对话的实时样式修改 v2.2
+  ─────────────────────────────────────────────────────────
+  需求: 用户希望在聊天对话框中随时输入样式修改指令（如"把标题3改成宋体小四加粗"），
+        AI 自动识别意图并生成 JSON 操作指令，通过 Office.js 精确修改指定样式定义，
+        仅修改用户提到的属性，其他属性保持不变。
+
+  核心架构: 聊天流内识别 → JSON 解析 → Office.js getByName() 执行
+
+  数据流:
+    用户输入 "把标题3改成宋体小四加粗"
+    → sendMessage() → system prompt 含样式识别指令
+    → AI 返回: {"action":"modify_style","targetStyle":"Heading 3","properties":{"fontCN":"宋体","sizePt":12,"bold":true}}
+    → parseStyleModificationJSON() 三层容错解析
+    → executeStyleModification() → Word.run → getByName("Heading 3") → 设置属性 → sync
+    → buildStyleModificationMessage() → "✅ 已修改「标题3」样式：中文字体=宋体, 字号=12pt, 加粗"
+    → renderChatMessage 渲染确认消息到聊天区
+
+  新增代码 (taskpane.js ~160 行):
+
+    1. STYLE_MODIFY_SYSTEM_ADDON (~35 行) — 样式修改识别 System Prompt 附加段:
+       - 指示 AI 识别用户的样式修改意图
+       - 定义 JSON 输出格式: {"action":"modify_style","targetStyle":"...","properties":{...}}
+       - targetStyle 映射: Heading 1~6 ↔ 标题1~6, Normal ↔ 正文
+       - properties 支持列表（10 种属性）:
+         · fontCN: 中文字体（宋体/微软雅黑/黑体/楷体/仿宋）
+         · fontEN: 英文字体（Times New Roman/Arial/Consolas）
+         · sizePt: 字号磅值（含中文字号→磅值对照: 小四=12, 五号=10.5, 四号=14, 小三=15, 三号=16, 小二=18, 二号=22）
+         · bold: 加粗 true/false
+         · italic: 斜体 true/false
+         · lineSpacing: 行距值
+         · lineSpacingType: 行距类型 ("fixed"固定值/"multiple"多倍/"atLeast"最小值)
+         · alignment: 对齐 ("left"/"center"/"right"/"justify")
+         · firstLineIndent: 首行缩进(磅)
+         · color: 字体颜色 (#hex)
+       - 关键规则: 仅修改用户明确提到的属性；非样式修改指令请正常回复；输出纯 JSON 不包裹 markdown
+
+    2. parseStyleModificationJSON(response) (~40 行) — AI 响应三层容错解析:
+       第1层: 整个响应 JSON.parse → 检查 action==="modify_style"
+       第2层: 提取 ```json ... ``` 代码块 → JSON.parse → 检查
+       第3层: 正则匹配包含 "action":"modify_style" 的 {...} 对象 → JSON.parse → 检查
+       三层均失败 → 返回 null（走正常聊天流程）
+
+    3. applyStyleProperties(style, props) (~25 行) — 属性设置器:
+       - font.name ← fontCN 或 fontEN
+       - font.size ← sizePt
+       - font.bold / font.italic ← bold/italic
+       - paragraphFormat.lineSpacing ← lineSpacing
+       - paragraphFormat.alignment ← alignment (映射: left→Left, center→Centered, right→Right, justify→Justified)
+       - paragraphFormat.firstLineIndent ← firstLineIndent
+       - font.color ← color
+       - 仅设置 props 中存在的属性，其他属性保持文档原有值不变
+
+    4. executeStyleModification(action) (~6 行) — 核心执行器:
+       Word.run → context.document.styles.getByName(name) → applyStyleProperties → sync
+       单次 Word.run + 单次 sync = 一个撤销单元（Ctrl+Z 可撤销）
+
+    5. buildStyleModificationMessage(action) (~20 行) — 人类可读确认消息:
+       将 properties 翻译为中文描述（如 sizePt=12 → "字号=12pt"）
+       targetStyle 映射为中文显示名（如 Heading 3 → "标题3"）
+       格式: ✅ 已修改「标题3」样式：中文字体=宋体, 字号=12pt, 加粗。
+             ℹ️ 文档中所有使用"标题3"样式的内容已自动更新。
+             🔄 可按 Ctrl+Z 撤销本次修改。
+
+  修改代码 (sendMessage 函数 ~30 行变更):
+
+    1. System Prompt 组装:
+       改前: var systemPrompt = systemOverride || cfg.systemPrompt;
+       改后: var basePrompt = systemOverride || cfg.systemPrompt;
+             var systemPrompt = systemOverride ? basePrompt : (STYLE_MODIFY_SYSTEM_ADDON + '\n\n' + basePrompt);
+       → 非预设模式下自动附加样式修改识别能力；AI 预设（润色/翻译等）不受影响
+
+    2. AI 响应处理 — 样式修改检测（在 renderChatMessage 之前插入）:
+       - 调用 parseStyleModificationJSON(response) 检测
+       - 命中 → executeStyleModification() 执行 → buildStyleModificationMessage() 生成确认 → renderChatMessage
+       - 执行失败 → ❌ 错误消息渲染到聊天区
+       - 未命中 → 走原有正常聊天流程（完全不受影响）
+
+  版本号:
+    manifest.xml:  1.0.0.5 → 1.0.0.6
+    taskpane.html:  v2.1 → v2.2 (footer + script src)
+    taskpane.js:    v2.1 → v2.2 (console.log × 2)
+    cache-busting:  ?v=2.1 → ?v=2.2 (manifest.xml 两处 SourceLocation)
+
+  关键设计决策:
+    - 不额外增加分类 API 调用（单次 AI 调用即完成识别+执行指令生成）
+    - AI 输出纯 JSON 不包裹 markdown（减少误识别概率，直接可 JSON.parse）
+    - style 修改是修改文档样式定义 → 所有使用该样式的内容自动更新
+    - 修改前会获取完整 style 对象 → 仅覆盖用户指定的属性 → 其他属性保留
+
+  修改文件:
+    taskpane.js  — ~190 行变更（新增 ~160 + 修改 ~30）
+    taskpane.html — 2 行变更（版本号）
+    manifest.xml  — 3 行变更（版本号 + 2 处 URL v 参数）
+
+================================================================================
