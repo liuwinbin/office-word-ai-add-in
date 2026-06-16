@@ -617,7 +617,27 @@
    * @param {object} props - 格式属性
    * @returns {boolean}
    */
-  function needsOoxmlOverride(props) {
+  
+  /**
+   * 从 Windows Flat OPC 中提取指定索引的段落 OOXML
+   * getOoxml() 在 Mac/Web 返回段落级 OOXML，在 Windows 返回整个文档的 Flat OPC
+   */
+  function extractParagraphFromFlatOpc(flatOpc, paraIndex) {
+    var bodyMatch = flatOpc.match(/<w:body[^>]*>([\s\S]*?)<\/w:body>/i);
+    if (!bodyMatch) return null;
+    var bodyContent = bodyMatch[1];
+    var paraRegex = /<w:p\b[\s\S]*?<\/w:p>/gi;
+    var paragraphs = [];
+    var match;
+    while ((match = paraRegex.exec(bodyContent)) !== null) {
+      paragraphs.push(match[0]);
+    }
+    if (paraIndex >= 0 && paraIndex < paragraphs.length) {
+      return paragraphs[paraIndex];
+    }
+    return null;
+  }
+function needsOoxmlOverride(props) {
     return typeof props.spaceBefore === 'number' ||
            typeof props.spaceAfter === 'number' ||
            typeof props.lineSpacing === 'number' ||
@@ -890,6 +910,18 @@
                 console.warn('OfficeAI: getOoxml returned empty for paragraph #' + j);
                 continue;
               }
+              // Windows returns Flat OPC; extract target paragraph OOXML
+              if (oxml.indexOf('<pkg:package') >= 0) {
+                oxml = extractParagraphFromFlatOpc(oxml, entry.paraIndex) || oxml;
+                if (!oxml || oxml.indexOf('<pkg:package') >= 0) {
+                  console.warn('OfficeAI: failed to extract paragraph from Flat OPC for entry #' + j);
+                  continue;
+                }
+              }
+              if (!oxml) {
+                console.warn('OfficeAI: getOoxml returned empty for paragraph #' + j);
+                continue;
+              }
               try {
                 var modified = injectParagraphOoxml(oxml, props);
                 // 第一个段落输出前后对比，方便诊断
@@ -1138,7 +1170,7 @@
               // 对段落级属性（段前/段后/行距/对齐）排队 OOXML 覆盖
               if (needsOoxmlOverride(spacing)) {
                 try {
-                  var ooxmlResult = p.getOoxml(); console.log("OfficeAI: normalizeInsertedParagraphs getOoxml queued for paragraph #" + i); ooxmlQueue.push({ para: p, ooxml: ooxmlResult, props: spacing });
+                  var ooxmlResult = p.getOoxml(); console.log("OfficeAI: normalizeInsertedParagraphs getOoxml queued for paragraph #" + i); ooxmlQueue.push({ para: p, ooxml: ooxmlResult, props: spacing, paraIndex: i });
                 } catch (e) {
                   console.warn("OfficeAI: getOoxml queue failed for paragraph #" + i, e);
                 }
@@ -1158,7 +1190,7 @@
                 continue;
               }
               if (!oxml) continue;
-              try {
+ `r`n              // Windows returns Flat OPC; extract target paragraph OOXML`r`n              if (oxml.indexOf('<pkg:package') >= 0) {`r`n                oxml = extractParagraphFromFlatOpc(oxml, entry.paraIndex) || oxml;`r`n                if (!oxml || oxml.indexOf('<pkg:package') >= 0) {`r`n                  console.warn("OfficeAI: normalizeInsertedParagraphs Flat OPC extraction failed for entry #" + j);`r`n                  continue;`r`n                }`r`n              }             try {
                 var modified = injectParagraphOoxml(oxml, entry.props);
                 var range = entry.para.getRange("Whole");
                 range.insertOoxml(modified, "Replace");
