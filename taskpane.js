@@ -589,11 +589,11 @@
     }
     if (typeof props.spaceBefore === 'number') {
       console.log('OfficeAI: applyParagraphFormatting spaceBefore=' + props.spaceBefore + 'pt');
-      p.spaceBefore = props.spaceBefore;
+      p.paragraphFormat.spaceBefore = props.spaceBefore;
     }
     if (typeof props.spaceAfter === 'number') {
       console.log('OfficeAI: applyParagraphFormatting spaceAfter=' + props.spaceAfter + 'pt');
-      p.spaceAfter = props.spaceAfter;
+      p.paragraphFormat.spaceAfter = props.spaceAfter;
     }
     if (typeof props.alignment === 'string') {
       var alignMap = {
@@ -602,10 +602,10 @@
         'right': 'Right',
         'justify': 'Justified'
       };
-      p.alignment = alignMap[props.alignment] || props.alignment;
+      p.paragraphFormat.alignment = alignMap[props.alignment] || props.alignment;
     }
     if (typeof props.firstLineIndent === 'number') {
-      p.firstLineIndent = props.firstLineIndent;
+      p.paragraphFormat.firstLineIndent = props.firstLineIndent;
     }
     if (typeof props.color === 'string') {
       p.font.color = props.color;
@@ -651,7 +651,7 @@
 
     return Word.run(function (context) {
       var paragraphs = context.document.body.paragraphs;
-      context.load(paragraphs, 'items/style');
+      context.load(paragraphs, 'items/style/paragraphFormat');
 
       return context.sync().then(function () {
         var modifiedCount = 0;
