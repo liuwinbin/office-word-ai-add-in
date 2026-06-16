@@ -587,20 +587,20 @@
     if (typeof props.lineSpacing === 'number') {
       p.lineSpacing = props.lineSpacing;
     }
-    // 段前/段后/对齐/缩进 → API 写入 + OOXML 双路径
-    // paragraphFormat 已在 executeStyleModification 中通过 paragraphs.load('paragraphFormat') 显式加载
+    // 段前/段后/对齐/缩进 → 使用标量属性避免 paragraphFormat 导航属性未加载的问题
+    // 标量属性写入不需要显式加载；对带样式段落可能被样式定义覆盖，OOXML 注入提供可靠覆盖
     if (typeof props.spaceBefore === 'number') {
-      p.paragraphFormat.spaceBefore = props.spaceBefore;
+      p.spaceBefore = props.spaceBefore;
     }
     if (typeof props.spaceAfter === 'number') {
-      p.paragraphFormat.spaceAfter = props.spaceAfter;
+      p.spaceAfter = props.spaceAfter;
     }
     if (typeof props.alignment === 'string') {
       var alignMap = { left: 'Left', center: 'Centered', right: 'Right', justify: 'Justified' };
-      p.paragraphFormat.alignment = alignMap[props.alignment] || props.alignment;
+      p.alignment = alignMap[props.alignment] || props.alignment;
     }
     if (typeof props.firstLineIndent === 'number') {
-      p.paragraphFormat.firstLineIndent = props.firstLineIndent;
+      p.firstLineIndent = props.firstLineIndent;
     }
     if (typeof props.color === 'string') {
       p.font.color = props.color;
