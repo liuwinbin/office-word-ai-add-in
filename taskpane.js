@@ -733,6 +733,28 @@
    * @param {object} action - 样式修改指令 {targetStyle: string, properties: object}
    * @returns {Promise<{styleName: string, count: number}>}
    */
+  /**
+   * 样式名归一化
+   *
+   * Word 中文版内置样式名使用  （非断行空格），而非普通空格  。
+   * 如段落实际样式名为 "标题 2" 而 AI 输出 "标题 2"，精确匹配会失败。
+   * 该函数将各种 Unicode 空白字符统一替换为普通空格，确保匹配不受空格编码差异影响。
+   *
+   * @param {string} s - 原始样式名
+   * @returns {string} 归一化后的样式名
+   */
+  function canonStyleName(s) {
+    return (s || '').replace(/[  -  　\s]+/g, ' ').trim();
+  }
+
+  /**
+   * 样式名匹配归一化：去除所有 Unicode 空白字符并转小写
+   * 用于处理 "标题2" vs "标题 2" vs "标题 2" 的互认
+   */
+  function normStyleKey(s) {
+    return (s || '').replace(/[  -  　\s]+/g, '').toLowerCase();
+  }
+
   function executeStyleModification(action) {
     var name = action.targetStyle;
     var props = action.properties;
@@ -754,10 +776,20 @@
     // 双向：英文→中文 和 中文→英文 都加入候选
     if (cnStyleNameMap[name]) targetNames.push(cnStyleNameMap[name]);
     // 反向查：如果 AI 输出了中文名，也加入英文名
+    var canonName = canonStyleName(name);
+    var compactName = normStyleKey(name);
     for (var enName in cnStyleNameMap) {
-      if (cnStyleNameMap[enName] === name && targetNames.indexOf(enName) < 0) {
+      var cnCanon = canonStyleName(cnStyleNameMap[enName]);
+      var cnCompact = normStyleKey(cnStyleNameMap[enName]);
+      if ((cnCanon === canonName || cnCompact === compactName) && targetNames.indexOf(enName) < 0) {
         targetNames.push(enName);
       }
+    }
+    // 归一化所有候选名用于匹配（处理 Word 非断行空格 vs 普通空格 vs 无空格差异）
+    var targetCanons = {};
+    for (var ti = 0; ti < targetNames.length; ti++) {
+      targetCanons[canonStyleName(targetNames[ti])] = true;
+      targetCanons[normStyleKey(targetNames[ti])] = true;
     }
 
     // 判断是否需要走 OOXML 路径覆盖段落级属性
@@ -785,7 +817,7 @@
 
           if (styleName) {
             allStylesInDoc[styleName] = (allStylesInDoc[styleName] || 0) + 1;
-            if (targetNames.indexOf(styleName) >= 0) {
+            if (targetCanons[canonStyleName(styleName)] || targetCanons[normStyleKey(styleName)]) {
               console.log('OfficeAI: matched paragraph #' + i + ' style="' + styleName + '" applying props:', JSON.stringify(props));
               // 阶段1: 字体属性走 Office.js API（已验证对样式段落有效）
               applyParagraphFormatting(p, props);
