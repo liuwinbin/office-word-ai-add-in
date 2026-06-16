@@ -1014,7 +1014,7 @@
     try { currentStyle = p.style || ''; } catch (e) {}
 
     // 已是内置标题 → 保持不变
-    if (/^Heading \d$|^标题 \d$/i.test(currentStyle)) return null;
+    if (/^Heading \d$|^标题 \d$/i.test(canonStyleName(currentStyle))) return null;
 
     // 读取格式属性
     var fontSize = 0, isBold = false, isItalic = false;
