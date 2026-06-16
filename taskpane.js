@@ -587,8 +587,21 @@
     if (typeof props.lineSpacing === 'number') {
       p.lineSpacing = props.lineSpacing;
     }
-    // 段前/段后/对齐/缩进 → 全部走 OOXML 注入，不经过 API
-    // （Word 对样式段落的 paragraphFormat 写入会被静默忽略，且未加载时可能抛异常）
+    // 段前/段后/对齐/缩进 → API 写入 + OOXML 双路径
+    // paragraphFormat 已在 executeStyleModification 中通过 paragraphs.load('paragraphFormat') 显式加载
+    if (typeof props.spaceBefore === 'number') {
+      p.paragraphFormat.spaceBefore = props.spaceBefore;
+    }
+    if (typeof props.spaceAfter === 'number') {
+      p.paragraphFormat.spaceAfter = props.spaceAfter;
+    }
+    if (typeof props.alignment === 'string') {
+      var alignMap = { left: 'Left', center: 'Centered', right: 'Right', justify: 'Justified' };
+      p.paragraphFormat.alignment = alignMap[props.alignment] || props.alignment;
+    }
+    if (typeof props.firstLineIndent === 'number') {
+      p.paragraphFormat.firstLineIndent = props.firstLineIndent;
+    }
     if (typeof props.color === 'string') {
       p.font.color = props.color;
     }
@@ -780,8 +793,9 @@
     return Word.run(function (context) {
       var paragraphs = context.document.body.paragraphs;
       // 'items' 加载所有标量属性（含 style），用于样式名匹配
-      // paragraphFormat 无需显式加载：Office.js 导航属性 Proxy 允许直接写入
+      // 显式加载 paragraphFormat：否则 API 写入 spaceBefore/spaceAfter/alignment 会抛异常
       context.load(paragraphs, 'items');
+      paragraphs.load('paragraphFormat');
 
       return context.sync().then(function () {
         var modifiedCount = 0;
@@ -824,6 +838,7 @@
           // 阶段2: 通过 OOXML 替换注入段落级格式（间距/对齐/缩进）
           var ooxmlApplied = 0;
           if (useOoxml && ooxmlQueue.length > 0) {
+            console.log('OfficeAI: OOXML phase start, queue=' + ooxmlQueue.length + ' props=' + JSON.stringify(props));
             for (var j = 0; j < ooxmlQueue.length; j++) {
               var entry = ooxmlQueue[j];
               var oxml = '';
@@ -831,18 +846,26 @@
                 console.warn('OfficeAI: getOoxml read failed for paragraph #' + j, e);
                 continue;
               }
-              if (oxml) {
-                try {
-                  var modified = injectParagraphOoxml(oxml, props);
-                  // 用 Range.insertOoxml('Replace') 替换整个段落
-                  var range = entry.para.getRange('Whole');
-                  range.insertOoxml(modified, 'Replace');
-                  ooxmlApplied++;
-                } catch (e2) {
-                  console.warn('OfficeAI: insertOoxml failed for paragraph #' + j, e2);
+              if (!oxml) {
+                console.warn('OfficeAI: getOoxml returned empty for paragraph #' + j);
+                continue;
+              }
+              try {
+                var modified = injectParagraphOoxml(oxml, props);
+                // 第一个段落输出前后对比，方便诊断
+                if (j === 0) {
+                  console.log('OfficeAI: OOXML[0] BEFORE (' + oxml.length + ' chars): ' + oxml.substring(0, 500));
+                  console.log('OfficeAI: OOXML[0] AFTER  (' + modified.length + ' chars): ' + modified.substring(0, 500));
                 }
+                // 用 Range.insertOoxml('Replace') 替换整个段落
+                var range = entry.para.getRange('Whole');
+                range.insertOoxml(modified, 'Replace');
+                ooxmlApplied++;
+              } catch (e2) {
+                console.warn('OfficeAI: insertOoxml failed for paragraph #' + j, e2);
               }
             }
+            console.log('OfficeAI: OOXML phase done, applied=' + ooxmlApplied);
           }
 
           return context.sync().then(function () {

@@ -7,7 +7,7 @@
   xsi:type="TaskPaneApp">
 
   <Id>2a929139-573a-4b24-a4e2-b59fe277b693</Id>
-  <Version>1.0.0.12</Version>
+  <Version>1.0.0.13</Version>
   <ProviderName>OfficeAI</ProviderName>
   <DefaultLocale>zh-CN</DefaultLocale>
   <DisplayName DefaultValue="OfficeAI智能助手"/>
@@ -22,7 +22,7 @@
     <Host Name="Document"/>
   </Hosts>
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/taskpane.html?v=2.8"/>
+    <SourceLocation DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/taskpane.html?v=2.9"/>
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
 
@@ -77,7 +77,7 @@
       </bt:Images>
       <bt:Urls>
         <bt:Url id="Commands.Url" DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/commands.html"/>
-        <bt:Url id="OfficeAI.Taskpane.Url" DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/taskpane.html?v=2.8"/>
+        <bt:Url id="OfficeAI.Taskpane.Url" DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/taskpane.html?v=2.9"/>
         <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://liuwinbin.github.io/office-word-ai-add-in/"/>
       </bt:Urls>
       <bt:ShortStrings>
