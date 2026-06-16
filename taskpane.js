@@ -872,9 +872,11 @@
           }
         }
 
-        return context.sync().then(function () {
+        console.log('OfficeAI: executeStyleModification loop done, ooxmlQueue.length=' + ooxmlQueue.length + ' modifiedCount=' + modifiedCount);
+          return context.sync().then(function () {
           // 阶段2: 通过 OOXML 替换注入段落级格式（间距/对齐/缩进）
           var ooxmlApplied = 0;
+          console.log('OfficeAI: OOXML phase entry check, useOoxml=' + useOoxml + ' queueLen=' + ooxmlQueue.length);
           if (useOoxml && ooxmlQueue.length > 0) {
             console.log('OfficeAI: OOXML phase start, queue=' + ooxmlQueue.length + ' props=' + JSON.stringify(props));
             for (var j = 0; j < ooxmlQueue.length; j++) {
