@@ -862,7 +862,7 @@
               // 阶段1b: 段落级属性（间距/对齐/缩进）排队获取 OOXML
               if (useOoxml) {
                 try {
-                  ooxmlQueue.push({ para: p, ooxml: p.getOoxml() });
+                  var ooxmlResult = p.getOoxml(); console.log('OfficeAI: getOoxml queued for paragraph #' + i + ', result=' + (ooxmlResult ? 'ClientResult' : 'null')); ooxmlQueue.push({ para: p, ooxml: ooxmlResult });
                 } catch (e) {
                   console.warn('OfficeAI: getOoxml queue failed for paragraph #' + i, e);
                 }
@@ -1138,7 +1138,7 @@
               // 对段落级属性（段前/段后/行距/对齐）排队 OOXML 覆盖
               if (needsOoxmlOverride(spacing)) {
                 try {
-                  ooxmlQueue.push({ para: p, ooxml: p.getOoxml(), props: spacing });
+                  var ooxmlResult = p.getOoxml(); console.log("OfficeAI: normalizeInsertedParagraphs getOoxml queued for paragraph #" + i); ooxmlQueue.push({ para: p, ooxml: ooxmlResult, props: spacing });
                 } catch (e) {
                   console.warn("OfficeAI: getOoxml queue failed for paragraph #" + i, e);
                 }
