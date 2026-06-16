@@ -1,4 +1,4 @@
-﻿/* global Office, Word, console */
+/* global Office, Word, console */
 
 (function () {
   'use strict';

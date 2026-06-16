@@ -16,7 +16,11 @@
       "Read(//g/OfficeAddins/codex-OfficeAddin/**)",
       "PowerShell(Get-ChildItem -Path \"G:\\\\OfficeAddins\\\\codex-OfficeAddin\\\\office-word-ai-add-in_v2.3\" -Name \"taskpane.html\",\"taskpane.js\",\"manifest.xml\",\"更新日志.txt\" | ForEach-Object { $f = Get-Item \\(Join-Path \"G:\\\\OfficeAddins\\\\codex-OfficeAddin\\\\office-word-ai-add-in_v2.3\" $_\\); Write-Output \"$\\($f.Name\\) — $\\($f.Length\\) bytes — $\\($f.LastWriteTime\\)\" })",
       "Bash(node -e \"var fs = require\\('fs'\\); var lines = fs.readFileSync\\('taskpane.js', 'utf8'\\).split\\('\\\\n'\\); for \\(var i = 718; i <= 728; i++\\) console.log\\('L' + i + ': ' + JSON.stringify\\(lines[i-1]\\)\\);\")",
-      "Bash(node _patch_ind.cjs)"
+      "Bash(node _patch_ind.cjs)",
+      "Bash(node --check taskpane.js)",
+      "Bash(node -e \"import\\('fs'\\).then\\(fs=>{var c=fs.readFileSync\\('taskpane.js','utf8'\\); try{new Function\\(c\\); console.log\\('OK: no syntax error'\\)}catch\\(e\\){console.log\\('Error at line ~' + \\(c.substring\\(0, e.stack ? 0 : 0\\), e.message\\)\\)}}\\)\")",
+      "Bash(curl -s -o NUL -w \"%{http_code}\" \"https://liuwinbin.github.io/office-word-ai-add-in/taskpane.js?v=2.12\")",
+      "Bash(curl -s \"https://liuwinbin.github.io/office-word-ai-add-in/taskpane.js\")"
     ],
     "additionalDirectories": [
       "G:\\OfficeAddins\\codex-OfficeAddin\\office-word-ai-add-in_v2.3"
