@@ -11,7 +11,15 @@
       "PowerShell(git commit -m \"fix: change context.load back to 'items' - 'items/style/paragraphFormat' was invalid load path causing style matching to fail\" -m \"'style' is a scalar string, not a navigation object with children. The invalid path caused Office.js to silently fail loading p.style, resulting in all paragraphs being skipped and count=0. v2.7\" -m \"Co-Authored-By: Claude noreply@anthropic.com\")",
       "PowerShell(git commit -m \"fix: remove paragraphFormat API writes and wrap applyParagraphFormatting in try-catch\" -m \"paragraphFormat writes are redundant \\(OOXML handles them\\) and accessing p.paragraphFormat without load can throw, causing modifiedCount=0. v2.8\" -m \"Co-Authored-By: Claude noreply@anthropic.com\")",
       "Bash(git commit -m '@ *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(ls -la \"G:\\\\OfficeAddins\\\\codex-OfficeAddin\" 2>/dev/null || echo \"DIR_NOT_FOUND\")",
+      "Read(//g/OfficeAddins/codex-OfficeAddin/**)",
+      "PowerShell(Get-ChildItem -Path \"G:\\\\OfficeAddins\\\\codex-OfficeAddin\\\\office-word-ai-add-in_v2.3\" -Name \"taskpane.html\",\"taskpane.js\",\"manifest.xml\",\"更新日志.txt\" | ForEach-Object { $f = Get-Item \\(Join-Path \"G:\\\\OfficeAddins\\\\codex-OfficeAddin\\\\office-word-ai-add-in_v2.3\" $_\\); Write-Output \"$\\($f.Name\\) — $\\($f.Length\\) bytes — $\\($f.LastWriteTime\\)\" })",
+      "Bash(node -e \"var fs = require\\('fs'\\); var lines = fs.readFileSync\\('taskpane.js', 'utf8'\\).split\\('\\\\n'\\); for \\(var i = 718; i <= 728; i++\\) console.log\\('L' + i + ': ' + JSON.stringify\\(lines[i-1]\\)\\);\")",
+      "Bash(node _patch_ind.cjs)"
+    ],
+    "additionalDirectories": [
+      "G:\\OfficeAddins\\codex-OfficeAddin\\office-word-ai-add-in_v2.3"
     ]
   }
 }

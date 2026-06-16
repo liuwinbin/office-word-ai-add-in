@@ -676,11 +676,31 @@
         sa.push('w:line="' + lineVal + '"');
         sa.push('w:lineRule="' + lineRule + '"');
       }
-      var spacingTag = '<w:spacing ' + sa.join(' ') + '/>';
-      if (/<w:spacing\b[^>]*\/?>/i.test(xml)) {
-        xml = xml.replace(/<w:spacing\b[^>]*\/?>/i, spacingTag);
+      var oldSpacingMatch = xml.match(/<w:spacing\b[^>]*\/?>/i);
+      if (oldSpacingMatch) {
+        // 合并原有属性，保留不被本次修改涉及的属性（如 w:line/w:lineRule）
+        // 防止只改 w:before/w:after 时丢弃原有的行距
+        var mergedAttrs = {};
+        var attrReSp = /(w:\w+)="([^"]*)"/g;
+        var mSp;
+        while ((mSp = attrReSp.exec(oldSpacingMatch[0])) !== null) {
+          mergedAttrs[mSp[1]] = mSp[2];
+        }
+        for (var si = 0; si < sa.length; si++) {
+          var eqSp = sa[si].indexOf('=');
+          if (eqSp > 0) {
+            mergedAttrs[sa[si].substring(0, eqSp)] = sa[si].substring(eqSp + 2, sa[si].length - 1);
+          }
+        }
+        var mergedParts = [];
+        for (var mk in mergedAttrs) {
+          if (mergedAttrs.hasOwnProperty(mk)) {
+            mergedParts.push(mk + '="' + mergedAttrs[mk] + '"');
+          }
+        }
+        xml = xml.replace(/<w:spacing\b[^>]*\/?>/i, '<w:spacing ' + mergedParts.join(' ') + '/>');
       } else {
-        insertXml += spacingTag;
+        insertXml += '<w:spacing ' + sa.join(' ') + '/>';
       }
     }
 
@@ -697,13 +717,31 @@
 
     // ── 首行缩进 <w:ind> ──
     if (typeof props.firstLineIndent === 'number') {
-      var indTag = '<w:ind w:firstLine="' + Math.round(props.firstLineIndent * twipsPerPt) + '"/>';
-      if (/<w:ind\b[^>]*\/?>/i.test(xml)) {
-        // 如果已有缩进标签，仅替换/添加 firstLine 属性
-        // 简单实现：整标签替换（避免复杂 XML 解析）
-        xml = xml.replace(/<w:ind\b[^>]*\/?>/i, indTag);
+      var newIndParts = ['w:firstLine="' + Math.round(props.firstLineIndent * twipsPerPt) + '"'];
+      var oldIndMatch = xml.match(/<w:ind\b[^>]*\/?>/i);
+      if (oldIndMatch) {
+        // 合并原有属性，保留不被本次修改涉及的属性（如 w:left/w:right/w:hanging）
+        var mergedInd = {};
+        var attrReInd = /(w:\w+)="([^"]*)"/g;
+        var mInd;
+        while ((mInd = attrReInd.exec(oldIndMatch[0])) !== null) {
+          mergedInd[mInd[1]] = mInd[2];
+        }
+        for (var ii = 0; ii < newIndParts.length; ii++) {
+          var eqInd = newIndParts[ii].indexOf('=');
+          if (eqInd > 0) {
+            mergedInd[newIndParts[ii].substring(0, eqInd)] = newIndParts[ii].substring(eqInd + 2, newIndParts[ii].length - 1);
+          }
+        }
+        var indResult = [];
+        for (var ik in mergedInd) {
+          if (mergedInd.hasOwnProperty(ik)) {
+            indResult.push(ik + '="' + mergedInd[ik] + '"');
+          }
+        }
+        xml = xml.replace(/<w:ind\b[^>]*\/?>/i, '<w:ind ' + indResult.join(' ') + '/>');
       } else {
-        insertXml += indTag;
+        insertXml += '<w:ind ' + newIndParts.join(' ') + '/>';
       }
     }
 
