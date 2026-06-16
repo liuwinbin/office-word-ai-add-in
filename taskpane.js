@@ -882,7 +882,7 @@ function needsOoxmlOverride(props) {
               // 阶段1b: 段落级属性（间距/对齐/缩进）排队获取 OOXML
               if (useOoxml) {
                 try {
-                  var ooxmlResult = p.getOoxml(); console.log('OfficeAI: getOoxml queued for paragraph #' + i + ', result=' + (ooxmlResult ? 'ClientResult' : 'null')); ooxmlQueue.push({ para: p, ooxml: ooxmlResult });
+                  var ooxmlResult = p.getOoxml(); console.log('OfficeAI: getOoxml queued for paragraph #' + i + ', result=' + (ooxmlResult ? 'ClientResult' : 'null')); ooxmlQueue.push({ para: p, ooxml: ooxmlResult, paraIndex: i });
                 } catch (e) {
                   console.warn('OfficeAI: getOoxml queue failed for paragraph #' + i, e);
                 }
