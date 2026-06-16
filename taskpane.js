@@ -1,4 +1,4 @@
-/* global Office, Word, console */
+﻿/* global Office, Word, console */
 
 (function () {
   'use strict';
@@ -1082,47 +1082,100 @@
     }
   }
 
+  // ── Default paragraph spacing per style (spaceBefore/spaceAfter in pt) ──
+  var STYLE_SPACING = {
+    "Heading 1":       { spaceBefore: 12, spaceAfter: 6, lineSpacing: 18, lineSpacingType: "fixed" },
+    "Heading 2":       { spaceBefore: 10, spaceAfter: 6, lineSpacing: 16, lineSpacingType: "fixed" },
+    "Heading 3":       { spaceBefore: 8,  spaceAfter: 6, lineSpacing: 14, lineSpacingType: "fixed" },
+    "Title":            { spaceBefore: 6,  spaceAfter: 12 },
+    "Subtitle":         { spaceBefore: 4,  spaceAfter: 8 },
+    "Normal":           { spaceBefore: 0,  spaceAfter: 6, lineSpacing: 1.5, lineSpacingType: "multiple" },
+    "List Paragraph":   { spaceBefore: 0,  spaceAfter: 3 },
+    "Quote":            { spaceBefore: 6,  spaceAfter: 6, lineSpacing: 1.0, lineSpacingType: "multiple" },
+    "Caption":          { spaceBefore: 4,  spaceAfter: 2, lineSpacing: 1.2, lineSpacingType: "multiple" }
+  };
+
   /**
    * 对刚插入的段落应用样式归一化
-   *
    * 原理: insertHtml 会把 <h1>~<h6> 转为标题样式，但 <p> 不会得到"正文"样式。
    *       此函数遍历最后 N 个非空段落，检测每段内容/格式，补设正确的 Word 样式名。
-   *
+   *       紧接着设置样式名后，自动应用对应的默认段落间距（spaceBefore/spaceAfter/lineSpacing）。
+   *       对带样式的段落（如标题）通过 OOXML 注入确保格式生效。
    * @param {number} paraCountBefore - 插入前的段落总数
    * @returns {Promise<number>} 成功设置样式的段落数
    */
   function normalizeInsertedParagraphs(paraCountBefore) {
     return Word.run(function (context) {
       var paragraphs = context.document.body.paragraphs;
-      context.load(paragraphs, 'items');
+      context.load(paragraphs, "items");
       return context.sync().then(function () {
         var items = paragraphs.items;
         var total = items.length;
         var startIdx = Math.max(0, paraCountBefore);
         var applied = 0;
+        var ooxmlQueue = [];
 
         for (var i = startIdx; i < total; i++) {
           var p = items[i];
-          var text = '';
-          try { text = (p.text || '').trim(); } catch (e) {}
+          var text = "";
+          try { text = (p.text || "").trim(); } catch (e) {}
           if (text.length === 0) continue;
 
           var targetStyle = detectTargetStyle(p, text, i - startIdx, total - startIdx);
           if (targetStyle) {
             setParagraphStyle(p, targetStyle);
             applied++;
+            // 应用该样式对应的默认段落间距
+            var spacing = STYLE_SPACING[targetStyle];
+            if (spacing) {
+              try {
+                applyParagraphFormatting(p, spacing);
+              } catch (e) {
+                console.warn("OfficeAI: applyParagraphFormatting threw for paragraph #" + i, e);
+              }
+              // 对段落级属性（段前/段后/行距/对齐）排队 OOXML 覆盖
+              if (needsOoxmlOverride(spacing)) {
+                try {
+                  ooxmlQueue.push({ para: p, ooxml: p.getOoxml(), props: spacing });
+                } catch (e) {
+                  console.warn("OfficeAI: getOoxml queue failed for paragraph #" + i, e);
+                }
+              }
+            }
           }
         }
 
         return context.sync().then(function () {
-          console.log('OfficeAI: normalizeInsertedParagraphs applied=' + applied + ' styles over ' + (total - startIdx) + ' new paragraphs');
+          var ooxmlApplied = 0;
+          if (ooxmlQueue.length > 0) {
+            for (var j = 0; j < ooxmlQueue.length; j++) {
+              var entry = ooxmlQueue[j];
+              var oxml = "";
+              try { oxml = entry.ooxml.value || ""; } catch (e) {
+                console.warn("OfficeAI: getOoxml read failed for paragraph #" + j, e);
+                continue;
+              }
+              if (!oxml) continue;
+              try {
+                var modified = injectParagraphOoxml(oxml, entry.props);
+                var range = entry.para.getRange("Whole");
+                range.insertOoxml(modified, "Replace");
+                ooxmlApplied++;
+              } catch (e2) {
+                console.warn("OfficeAI: insertOoxml failed for paragraph #" + j, e2);
+              }
+            }
+            return context.sync().then(function () {
+              console.log("OfficeAI: normalizeInsertedParagraphs applied=" + applied + " styles + " + ooxmlApplied + " OOXML overrides over " + (total - startIdx) + " new paragraphs");
+              return applied;
+            });
+          }
+          console.log("OfficeAI: normalizeInsertedParagraphs applied=" + applied + " styles over " + (total - startIdx) + " new paragraphs");
           return applied;
         });
       });
     });
-  }
-
-  /**
+  }  /**
    * 获取当前文档段落总数（插入前快照）
    * @returns {Promise<number>}
    */
