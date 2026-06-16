@@ -797,9 +797,9 @@
 
     return Word.run(function (context) {
       var paragraphs = context.document.body.paragraphs;
-      // 加载 paragraphFormat 以保 applyParagraphFormatting 不抛 TypeError
-      // （字体走 API / 间距走 OOXML，但 paragraphFormat 对象本身需存在）
-      context.load(paragraphs, 'items/style/paragraphFormat');
+      // 'items' 加载所有标量属性（含 style），用于样式名匹配
+      // paragraphFormat 无需显式加载：Office.js 导航属性 Proxy 允许直接写入
+      context.load(paragraphs, 'items');
 
       return context.sync().then(function () {
         var modifiedCount = 0;
