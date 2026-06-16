@@ -587,26 +587,8 @@
     if (typeof props.lineSpacing === 'number') {
       p.lineSpacing = props.lineSpacing;
     }
-    if (typeof props.spaceBefore === 'number') {
-      console.log('OfficeAI: applyParagraphFormatting spaceBefore=' + props.spaceBefore + 'pt');
-      p.paragraphFormat.spaceBefore = props.spaceBefore;
-    }
-    if (typeof props.spaceAfter === 'number') {
-      console.log('OfficeAI: applyParagraphFormatting spaceAfter=' + props.spaceAfter + 'pt');
-      p.paragraphFormat.spaceAfter = props.spaceAfter;
-    }
-    if (typeof props.alignment === 'string') {
-      var alignMap = {
-        'left': 'Left',
-        'center': 'Centered',
-        'right': 'Right',
-        'justify': 'Justified'
-      };
-      p.paragraphFormat.alignment = alignMap[props.alignment] || props.alignment;
-    }
-    if (typeof props.firstLineIndent === 'number') {
-      p.paragraphFormat.firstLineIndent = props.firstLineIndent;
-    }
+    // 段前/段后/对齐/缩进 → 全部走 OOXML 注入，不经过 API
+    // （Word 对样式段落的 paragraphFormat 写入会被静默忽略，且未加载时可能抛异常）
     if (typeof props.color === 'string') {
       p.font.color = props.color;
     }
@@ -820,7 +802,11 @@
             if (targetCanons[canonStyleName(styleName)] || targetCanons[normStyleKey(styleName)]) {
               console.log('OfficeAI: matched paragraph #' + i + ' style="' + styleName + '" applying props:', JSON.stringify(props));
               // 阶段1: 字体属性走 Office.js API（已验证对样式段落有效）
-              applyParagraphFormatting(p, props);
+              try {
+                applyParagraphFormatting(p, props);
+              } catch (e) {
+                console.warn('OfficeAI: applyParagraphFormatting threw for paragraph #' + i, e);
+              }
               // 阶段1b: 段落级属性（间距/对齐/缩进）排队获取 OOXML
               if (useOoxml) {
                 try {
