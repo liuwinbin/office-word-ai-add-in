@@ -1190,7 +1190,15 @@ function needsOoxmlOverride(props) {
                 continue;
               }
               if (!oxml) continue;
- `r`n              // Windows returns Flat OPC; extract target paragraph OOXML`r`n              if (oxml.indexOf('<pkg:package') >= 0) {`r`n                oxml = extractParagraphFromFlatOpc(oxml, entry.paraIndex) || oxml;`r`n                if (!oxml || oxml.indexOf('<pkg:package') >= 0) {`r`n                  console.warn("OfficeAI: normalizeInsertedParagraphs Flat OPC extraction failed for entry #" + j);`r`n                  continue;`r`n                }`r`n              }             try {
+ 
+              // Windows returns Flat OPC; extract target paragraph OOXML
+              if (oxml.indexOf('<pkg:package') >= 0) {
+                oxml = extractParagraphFromFlatOpc(oxml, entry.paraIndex) || oxml;
+                if (!oxml || oxml.indexOf('<pkg:package') >= 0) {
+                  console.warn("OfficeAI: normalizeInsertedParagraphs Flat OPC extraction failed for entry #" + j);
+                  continue;
+                }
+              }             try {
                 var modified = injectParagraphOoxml(oxml, entry.props);
                 var range = entry.para.getRange("Whole");
                 range.insertOoxml(modified, "Replace");
