@@ -613,6 +613,117 @@
   }
 
   /**
+   * 检查是否包含需要通过 OOXML 覆盖的段落级属性
+   *
+   * Office.js 的 p.paragraphFormat.xxx 和 p.xxx 标量属性在带样式段落
+   * （如标题）上无法可靠覆盖样式定义的段前段后/行距/对齐/缩进。
+   * 这些属性必须通过 OOXML 直接注入 <w:pPr> 才能生效。
+   *
+   * @param {object} props - 格式属性
+   * @returns {boolean}
+   */
+  function needsOoxmlOverride(props) {
+    return typeof props.spaceBefore === 'number' ||
+           typeof props.spaceAfter === 'number' ||
+           typeof props.lineSpacing === 'number' ||
+           typeof props.alignment === 'string' ||
+           typeof props.firstLineIndent === 'number';
+  }
+
+  /**
+   * 在段落 OOXML 的 <w:pPr> 中注入/替换段落级格式属性
+   *
+   * 原理：
+   *   1. 获取段落的完整 OOXML（<w:p>...</w:p>）
+   *   2. 在 <w:pPr> 内修改 <w:spacing> / <w:jc> / <w:ind>
+   *   3. 通过 range.insertOoxml('Replace') 替换整个段落
+   *
+   * OOXML 间距单位换算：
+   *   - 段前/段后: 1pt = 20 twips
+   *   - 多倍行距:  1.0x = 240, 1.5x = 360, 2.0x = 480 (w:lineRule="auto")
+   *   - 固定行距:  1pt = 20 twips                         (w:lineRule="exact")
+   *   - 最小行距:  1pt = 20 twips                         (w:lineRule="atLeast")
+   *
+   * @param {string} xml - 段落 OOXML
+   * @param {object} props - 格式属性 {spaceBefore, spaceAfter, lineSpacing, lineSpacingType, alignment, firstLineIndent}
+   * @returns {string} 修改后的 OOXML
+   */
+  function injectParagraphOoxml(xml, props) {
+    var twipsPerPt = 20;
+    var insertXml = '';
+
+    // ── 间距 <w:spacing> ──
+    if (typeof props.spaceBefore === 'number' ||
+        typeof props.spaceAfter === 'number' ||
+        typeof props.lineSpacing === 'number') {
+      var sa = [];
+      if (typeof props.spaceBefore === 'number') {
+        sa.push('w:before="' + Math.round(props.spaceBefore * twipsPerPt) + '"');
+      }
+      if (typeof props.spaceAfter === 'number') {
+        sa.push('w:after="' + Math.round(props.spaceAfter * twipsPerPt) + '"');
+      }
+      if (typeof props.lineSpacing === 'number') {
+        var lsType = props.lineSpacingType || 'multiple';
+        var lineRule = 'auto';
+        var lineVal;
+        if (lsType === 'fixed') {
+          lineRule = 'exact';
+          lineVal = Math.round(props.lineSpacing * twipsPerPt);
+        } else if (lsType === 'atLeast') {
+          lineRule = 'atLeast';
+          lineVal = Math.round(props.lineSpacing * twipsPerPt);
+        } else {
+          // multiple: 1.0 = 240
+          lineRule = 'auto';
+          lineVal = Math.round(props.lineSpacing * 240);
+        }
+        sa.push('w:line="' + lineVal + '"');
+        sa.push('w:lineRule="' + lineRule + '"');
+      }
+      var spacingTag = '<w:spacing ' + sa.join(' ') + '/>';
+      if (/<w:spacing\b[^>]*\/?>/i.test(xml)) {
+        xml = xml.replace(/<w:spacing\b[^>]*\/?>/i, spacingTag);
+      } else {
+        insertXml += spacingTag;
+      }
+    }
+
+    // ── 对齐 <w:jc> ──
+    if (typeof props.alignment === 'string') {
+      var alignMap = { left: 'left', center: 'center', right: 'right', justify: 'both' };
+      var jcTag = '<w:jc w:val="' + (alignMap[props.alignment] || props.alignment) + '"/>';
+      if (/<w:jc\b[^>]*\/?>/i.test(xml)) {
+        xml = xml.replace(/<w:jc\b[^>]*\/?>/i, jcTag);
+      } else {
+        insertXml += jcTag;
+      }
+    }
+
+    // ── 首行缩进 <w:ind> ──
+    if (typeof props.firstLineIndent === 'number') {
+      var indTag = '<w:ind w:firstLine="' + Math.round(props.firstLineIndent * twipsPerPt) + '"/>';
+      if (/<w:ind\b[^>]*\/?>/i.test(xml)) {
+        // 如果已有缩进标签，仅替换/添加 firstLine 属性
+        // 简单实现：整标签替换（避免复杂 XML 解析）
+        xml = xml.replace(/<w:ind\b[^>]*\/?>/i, indTag);
+      } else {
+        insertXml += indTag;
+      }
+    }
+
+    if (!insertXml) return xml;
+
+    // 插入到 <w:pPr> 内（紧接开始标签之后）
+    if (/<w:pPr\b/i.test(xml)) {
+      return xml.replace(/(<w:pPr\b[^>]*>)/i, '$1' + insertXml);
+    }
+
+    // 无 <w:pPr>：在 <w:p> 开始标签后创建
+    return xml.replace(/(<w:p\b[^>]*>)/i, '$1<w:pPr>' + insertXml + '</w:pPr>');
+  }
+
+  /**
    * 执行样式修改 — 遍历全文段落，对匹配样式的段落应用格式
    *
    * Office.js 的 Style.font / Style.paragraphFormat 为只读，
@@ -649,16 +760,23 @@
       }
     }
 
+    // 判断是否需要走 OOXML 路径覆盖段落级属性
+    var useOoxml = needsOoxmlOverride(props);
+
     return Word.run(function (context) {
       var paragraphs = context.document.body.paragraphs;
+      // 加载 paragraphFormat 以保 applyParagraphFormatting 不抛 TypeError
+      // （字体走 API / 间距走 OOXML，但 paragraphFormat 对象本身需存在）
       context.load(paragraphs, 'items/style/paragraphFormat');
 
       return context.sync().then(function () {
         var modifiedCount = 0;
         // 收集文档中所有唯一样式名（用于无匹配时提示）
         var allStylesInDoc = {};
+        // OOXML 队列：{para, ooxml}
+        var ooxmlQueue = [];
 
-        console.log('OfficeAI: executeStyleModification target=' + name + ' candidates=' + JSON.stringify(targetNames));
+        console.log('OfficeAI: executeStyleModification target=' + name + ' candidates=' + JSON.stringify(targetNames) + ' useOoxml=' + useOoxml);
 
         for (var i = 0; i < paragraphs.items.length; i++) {
           var p = paragraphs.items[i];
@@ -669,18 +787,53 @@
             allStylesInDoc[styleName] = (allStylesInDoc[styleName] || 0) + 1;
             if (targetNames.indexOf(styleName) >= 0) {
               console.log('OfficeAI: matched paragraph #' + i + ' style="' + styleName + '" applying props:', JSON.stringify(props));
+              // 阶段1: 字体属性走 Office.js API（已验证对样式段落有效）
               applyParagraphFormatting(p, props);
+              // 阶段1b: 段落级属性（间距/对齐/缩进）排队获取 OOXML
+              if (useOoxml) {
+                try {
+                  ooxmlQueue.push({ para: p, ooxml: p.getOoxml() });
+                } catch (e) {
+                  console.warn('OfficeAI: getOoxml queue failed for paragraph #' + i, e);
+                }
+              }
               modifiedCount++;
             }
           }
         }
 
         return context.sync().then(function () {
-          var styleList = Object.keys(allStylesInDoc).sort(function (a, b) {
-            return (allStylesInDoc[b] || 0) - (allStylesInDoc[a] || 0);
+          // 阶段2: 通过 OOXML 替换注入段落级格式（间距/对齐/缩进）
+          var ooxmlApplied = 0;
+          if (useOoxml && ooxmlQueue.length > 0) {
+            for (var j = 0; j < ooxmlQueue.length; j++) {
+              var entry = ooxmlQueue[j];
+              var oxml = '';
+              try { oxml = entry.ooxml.value || ''; } catch (e) {
+                console.warn('OfficeAI: getOoxml read failed for paragraph #' + j, e);
+                continue;
+              }
+              if (oxml) {
+                try {
+                  var modified = injectParagraphOoxml(oxml, props);
+                  // 用 Range.insertOoxml('Replace') 替换整个段落
+                  var range = entry.para.getRange('Whole');
+                  range.insertOoxml(modified, 'Replace');
+                  ooxmlApplied++;
+                } catch (e2) {
+                  console.warn('OfficeAI: insertOoxml failed for paragraph #' + j, e2);
+                }
+              }
+            }
+          }
+
+          return context.sync().then(function () {
+            var styleList = Object.keys(allStylesInDoc).sort(function (a, b) {
+              return (allStylesInDoc[b] || 0) - (allStylesInDoc[a] || 0);
+            });
+            console.log('OfficeAI: executeStyleModification done. modified=' + modifiedCount + ' ooxmlApplied=' + ooxmlApplied + ' totalStyles=' + styleList.length, styleList.slice(0, 10));
+            return { styleName: name, count: modifiedCount, allStyles: styleList };
           });
-          console.log('OfficeAI: executeStyleModification done. modified=' + modifiedCount + ' totalStyles=' + styleList.length, styleList.slice(0, 10));
-          return { styleName: name, count: modifiedCount, allStyles: styleList };
         });
       });
     });
