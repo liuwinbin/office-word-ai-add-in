@@ -10,7 +10,8 @@
       "PowerShell(git commit -m \"fix: normalize style name matching for Unicode/non-breaking spaces - Word uses U+00A0 in Chinese style names causing exact-match failures; add canonStyleName\\(\\) + normStyleKey\\(\\); v2.6\" -m \"Co-Authored-By: Claude noreply@anthropic.com\")",
       "PowerShell(git commit -m \"fix: change context.load back to 'items' - 'items/style/paragraphFormat' was invalid load path causing style matching to fail\" -m \"'style' is a scalar string, not a navigation object with children. The invalid path caused Office.js to silently fail loading p.style, resulting in all paragraphs being skipped and count=0. v2.7\" -m \"Co-Authored-By: Claude noreply@anthropic.com\")",
       "PowerShell(git commit -m \"fix: remove paragraphFormat API writes and wrap applyParagraphFormatting in try-catch\" -m \"paragraphFormat writes are redundant \\(OOXML handles them\\) and accessing p.paragraphFormat without load can throw, causing modifiedCount=0. v2.8\" -m \"Co-Authored-By: Claude noreply@anthropic.com\")",
-      "Bash(git commit -m '@ *)"
+      "Bash(git commit -m '@ *)",
+      "Bash(git commit *)"
     ]
   }
 }

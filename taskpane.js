@@ -792,10 +792,10 @@
 
     return Word.run(function (context) {
       var paragraphs = context.document.body.paragraphs;
-      // 'items' 加载所有标量属性（含 style），用于样式名匹配
-      // 显式加载 paragraphFormat：否则 API 写入 spaceBefore/spaceAfter/alignment 会抛异常
+      // 'items' 加载所有标量属性（含 style，用于样式名匹配）
+      // 注意：paragraphFormat 和 font 一样是导航属性，写入不需要显式加载；
+      // 不能同时调用 paragraphs.load('paragraphFormat')，会覆盖上面的 items 加载导致 p.style 为空
       context.load(paragraphs, 'items');
-      paragraphs.load('paragraphFormat');
 
       return context.sync().then(function () {
         var modifiedCount = 0;
