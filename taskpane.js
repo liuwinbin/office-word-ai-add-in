@@ -589,11 +589,11 @@
     }
     if (typeof props.spaceBefore === 'number') {
       console.log('OfficeAI: applyParagraphFormatting spaceBefore=' + props.spaceBefore + 'pt');
-      p.paragraphFormat.spaceBefore = props.spaceBefore;
+      p.spaceBefore = props.spaceBefore;
     }
     if (typeof props.spaceAfter === 'number') {
       console.log('OfficeAI: applyParagraphFormatting spaceAfter=' + props.spaceAfter + 'pt');
-      p.paragraphFormat.spaceAfter = props.spaceAfter;
+      p.spaceAfter = props.spaceAfter;
     }
     if (typeof props.alignment === 'string') {
       var alignMap = {
@@ -602,10 +602,10 @@
         'right': 'Right',
         'justify': 'Justified'
       };
-      p.paragraphFormat.alignment = alignMap[props.alignment] || props.alignment;
+      p.alignment = alignMap[props.alignment] || props.alignment;
     }
     if (typeof props.firstLineIndent === 'number') {
-      p.paragraphFormat.firstLineIndent = props.firstLineIndent;
+      p.firstLineIndent = props.firstLineIndent;
     }
     if (typeof props.color === 'string') {
       p.font.color = props.color;
